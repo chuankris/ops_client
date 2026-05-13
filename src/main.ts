@@ -1,5 +1,5 @@
 import "./styles.css";
-import { connections, messages, resources } from "./data";
+import { connections as mockConnections, messages as mockMessages, resources as mockResources } from "./data";
 import type { BrokerResource, MessageRecord } from "./types";
 
 type Page = "subscribe" | "send" | "history" | "database";
@@ -14,6 +14,10 @@ interface AppState {
   sendBody: string;
   resourcePicker: null | "subscribe" | "send";
   resourceKeyword: string;
+  connections: typeof mockConnections;
+  resources: BrokerResource[];
+  messages: MessageRecord[];
+  apiOnline: boolean;
 }
 
 const state: AppState = {
@@ -23,9 +27,13 @@ const state: AppState = {
   selectedResource: "pdms.topic.model.data.tb_fire_tool",
   sendProtocol: "rabbit-exchange",
   sendTarget: "amq.topic",
-  sendBody: messages[0].payload,
+  sendBody: mockMessages[0].payload,
   resourcePicker: null,
-  resourceKeyword: ""
+  resourceKeyword: "",
+  connections: mockConnections,
+  resources: mockResources,
+  messages: mockMessages,
+  apiOnline: false
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -37,17 +45,17 @@ if (!app) {
 const root = app;
 
 function activeConnection() {
-  return connections.find(item => item.id === state.activeConnectionId) ?? connections[0];
+  return state.connections.find(item => item.id === state.activeConnectionId) ?? state.connections[0];
 }
 
 function selectedMessage() {
-  return messages.find(item => item.id === state.selectedMessageId) ?? messages[0];
+  return state.messages.find(item => item.id === state.selectedMessageId) ?? state.messages[0];
 }
 
 function filteredResources(): BrokerResource[] {
   const keyword = state.resourceKeyword.trim().toLowerCase();
-  if (!keyword) return resources;
-  return resources.filter(item => `${item.kind} ${item.broker} ${item.name}`.toLowerCase().includes(keyword));
+  if (!keyword) return state.resources;
+  return state.resources.filter(item => `${item.kind} ${item.broker} ${item.name}`.toLowerCase().includes(keyword));
 }
 
 function escapeHtml(value: string): string {
@@ -104,7 +112,7 @@ function renderConnectionPanel() {
           <button class="btn soft">断开</button>
         </div>
         <div class="connection-list">
-          ${connections.map(item => `
+          ${state.connections.map(item => `
             <div class="connection-card ${item.id === current.id ? "active" : ""}" data-action="select-connection" data-id="${item.id}">
               <div class="card-name">${item.name}</div>
               <div class="card-meta">${item.kind} · ${item.host}:${item.port} · ${item.meta}</div>
@@ -114,7 +122,7 @@ function renderConnectionPanel() {
         </div>
         <div class="field"><label>资源搜索</label><input placeholder="搜索 exchange/topic/queue" /></div>
         <div class="resource-tree">
-          ${resources.slice(0, 5).map(item => `
+          ${state.resources.slice(0, 5).map(item => `
             <div class="tree-item ${item.name === state.selectedResource ? "active" : ""}" data-action="select-resource" data-name="${item.name}">
               <span class="type-pill">${item.kind}</span>${item.name}
             </div>
@@ -176,7 +184,7 @@ function renderSubscribePage() {
                 <tr><th>时间</th><th>中间件</th><th>来源</th><th>Key/RoutingKey</th><th>分区</th><th>Offset</th><th>大小</th><th>状态</th></tr>
               </thead>
               <tbody>
-                ${messages.map(item => renderMessageRow(item)).join("")}
+                ${state.messages.map(item => renderMessageRow(item)).join("")}
               </tbody>
             </table>
           </div>
@@ -255,7 +263,7 @@ function renderSendPage() {
       <aside class="panel">
         <div class="panel-head"><div class="panel-title">发送目标</div></div>
         <div class="panel-body">
-          <div class="field"><label>连接</label><select>${connections.map(item => `<option>${item.name}</option>`).join("")}</select></div>
+          <div class="field"><label>连接</label><select>${state.connections.map(item => `<option>${item.name}</option>`).join("")}</select></div>
           <div class="field">
             <label>发送协议</label>
             <select data-action="change-send-protocol">
@@ -309,7 +317,7 @@ function renderHistoryPage() {
       <aside class="panel">
         <div class="panel-head"><div class="panel-title">历史筛选</div></div>
         <div class="panel-body">
-          <div class="field"><label>连接</label><select><option>全部连接</option>${connections.map(item => `<option>${item.name}</option>`).join("")}</select></div>
+          <div class="field"><label>连接</label><select><option>全部连接</option>${state.connections.map(item => `<option>${item.name}</option>`).join("")}</select></div>
           <div class="field"><label>来源</label><input placeholder="topic / queue / exchange" /></div>
           <div class="field"><label>关键字</label><input placeholder="traceId / messageId / JSON字段" /></div>
           <div class="inline">
@@ -326,7 +334,7 @@ function renderHistoryPage() {
             <table>
               <thead><tr><th>时间</th><th>中间件</th><th>来源</th><th>Key/RoutingKey</th><th>MessageId</th><th>大小</th><th>操作</th></tr></thead>
               <tbody>
-                ${messages.map(item => `<tr data-action="select-message" data-id="${item.id}"><td>2026-05-13 ${item.time}</td><td>${item.broker}</td><td>${item.source}</td><td>${item.key}</td><td>${item.id}</td><td>${item.size}</td><td>回放</td></tr>`).join("")}
+                ${state.messages.map(item => `<tr data-action="select-message" data-id="${item.id}"><td>2026-05-13 ${item.time}</td><td>${item.broker}</td><td>${item.source}</td><td>${item.key}</td><td>${item.id}</td><td>${item.size}</td><td>回放</td></tr>`).join("")}
               </tbody>
             </table>
           </div>
@@ -380,7 +388,7 @@ function render() {
         <div class="brand">运维 MQ 客户端</div>
         <nav class="tabs">${renderTabs()}</nav>
         <div class="top-actions">
-          <span class="status"><span class="dot ok"></span>${activeConnection().name} 已连接</span>
+          <span class="status"><span class="dot ${state.apiOnline ? "ok" : "warn"}"></span>${activeConnection().name} · ${state.apiOnline ? "本地 API 在线" : "Mock 模式"}</span>
           <button class="btn ghost small">导入配置</button>
           <button class="btn ghost small">导出配置</button>
         </div>
@@ -468,3 +476,31 @@ root.addEventListener("change", event => {
 });
 
 render();
+
+async function loadFromApi() {
+  try {
+    const [healthRes, connectionsRes, resourcesRes, messagesRes] = await Promise.all([
+      fetch("http://127.0.0.1:4317/api/health"),
+      fetch("http://127.0.0.1:4317/api/connections"),
+      fetch("http://127.0.0.1:4317/api/resources"),
+      fetch("http://127.0.0.1:4317/api/messages")
+    ]);
+    if (!healthRes.ok || !connectionsRes.ok || !resourcesRes.ok || !messagesRes.ok) {
+      return;
+    }
+    const connectionsPayload = await connectionsRes.json();
+    const resourcesPayload = await resourcesRes.json();
+    const messagesPayload = await messagesRes.json();
+    state.connections = connectionsPayload.data ?? mockConnections;
+    state.resources = resourcesPayload.data ?? mockResources;
+    state.messages = messagesPayload.data ?? mockMessages;
+    state.apiOnline = true;
+    state.sendBody = state.messages[0]?.payload ?? state.sendBody;
+    render();
+  } catch {
+    state.apiOnline = false;
+    render();
+  }
+}
+
+void loadFromApi();

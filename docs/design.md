@@ -7,10 +7,24 @@
 ## 当前技术方向
 
 - 当前版本：Vite + TypeScript 前端项目，先把交互和页面状态跑起来。
+- 本地后端：当前使用 Node/Express 搭了一个轻量 API 骨架，用 Mock 数据模拟 MQ 能力。
 - 客户端打包：后续推荐接 Tauri，复用当前前端构建产物。
 - MQ/DB 内核：后续用 Java 或 Rust 后端封装 RabbitMQ、Kafka、ActiveMQ、数据库连接。
 - 本地通信：前端通过本地 HTTP 调接口，实时消息通过 WebSocket 推送。
 - 本地存储：SQLite 保存连接配置、历史消息和发送模板。
+
+## 为什么需要本地后端
+
+这个工具需要连接 MQ、保持订阅、推送实时消息、保存本地历史，后续还会连接数据库做表复制。浏览器前端不适合直接承担这些能力，所以需要一个随客户端一起启动的本地后端。它不一定部署到服务器，更像桌面客户端的内核。
+
+当前后端先提供 Mock API：
+
+- `GET /api/health`
+- `GET /api/connections`
+- `POST /api/connections/test`
+- `GET /api/resources`
+- `GET /api/messages`
+- `POST /api/messages/send`
 
 ## 核心模块
 

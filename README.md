@@ -14,8 +14,12 @@
 
 ```bash
 npm install
-npm run dev
+npm run dev:all
 ```
+
+前端地址：`http://127.0.0.1:5173/`
+
+本地 API 地址：`http://127.0.0.1:4317/`
 
 ## 构建
 
