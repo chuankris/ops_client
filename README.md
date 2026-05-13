@@ -10,4 +10,15 @@
 - 历史记录
 - 数据库任务占位
 
-打开 `index.html` 即可预览交互稿。
+## 开发
+
+```bash
+npm install
+npm run dev
+```
+
+## 构建
+
+```bash
+npm run build
+```
