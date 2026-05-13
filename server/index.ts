@@ -1,6 +1,9 @@
 import cors from "cors";
 import express from "express";
-import { connections, messages, resources } from "./mockData";
+import { getAdapter } from "./adapters";
+import { repository } from "./repository";
+import { startSubscription, stopSubscription, streamSubscription } from "./subscriptions";
+import type { BrokerKind, ConnectionProfile, SendRequest } from "./types";
 
 const app = express();
 const port = Number(process.env.OPS_CLIENT_API_PORT ?? 4317);
@@ -13,52 +16,76 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.get("/api/connections", (_req, res) => {
-  res.json({ code: "0", data: connections });
+  res.json({ code: "0", data: repository.listConnections() });
 });
 
-app.post("/api/connections/test", (req, res) => {
-  const { kind, host, port: brokerPort } = req.body ?? {};
-  res.json({
-    code: "0",
-    data: {
-      success: Boolean(kind && host && brokerPort),
-      latencyMs: 36,
-      message: "连接参数校验通过，真实连通性将在 MQ 适配器接入后执行"
-    }
-  });
+app.post("/api/connections/test", async (req, res) => {
+  const profile = req.body as ConnectionProfile;
+  if (!profile?.kind || !profile.host || !profile.port) {
+    res.status(400).json({ code: "400", msg: "kind、host、port 必填" });
+    return;
+  }
+  const adapter = getAdapter(profile.kind);
+  const result = await adapter.testConnection(profile);
+  res.json({ code: "0", data: result });
 });
 
-app.get("/api/resources", (req, res) => {
-  const keyword = String(req.query.keyword ?? "").toLowerCase();
-  const broker = String(req.query.broker ?? "");
-  const filtered = resources.filter(item => {
-    const hitKeyword = !keyword || `${item.kind} ${item.broker} ${item.name}`.toLowerCase().includes(keyword);
-    const hitBroker = !broker || item.broker === broker;
-    return hitKeyword && hitBroker;
-  });
-  res.json({ code: "0", data: filtered });
+app.get("/api/resources", async (req, res) => {
+  const connectionId = String(req.query.connectionId ?? "");
+  const keyword = String(req.query.keyword ?? "");
+  const broker = req.query.broker ? String(req.query.broker) as BrokerKind : undefined;
+  const connection = connectionId ? repository.getConnection(connectionId) : undefined;
+
+  if (connection) {
+    const adapter = getAdapter(connection.kind);
+    const data = await adapter.listResources(connection, keyword);
+    res.json({ code: "0", data });
+    return;
+  }
+
+  res.json({ code: "0", data: repository.listResources({ broker, keyword }) });
 });
 
 app.get("/api/messages", (_req, res) => {
-  res.json({ code: "0", data: messages });
+  res.json({ code: "0", data: repository.listMessages() });
 });
 
-app.post("/api/messages/send", (req, res) => {
-  const { protocol, target, body } = req.body ?? {};
-  if (!protocol || !target || !body) {
+app.post("/api/messages/send", async (req, res) => {
+  const request = req.body as SendRequest & { connectionId?: string };
+  const connection = repository.getConnection(request.connectionId ?? "rabbit-test");
+  if (!connection) {
+    res.status(404).json({ code: "404", msg: "连接不存在" });
+    return;
+  }
+  if (!request.protocol || !request.target || !request.body) {
     res.status(400).json({ code: "400", msg: "protocol、target、body 必填" });
     return;
   }
-  res.json({
-    code: "0",
-    data: {
-      messageId: `local-${Date.now()}`,
-      protocol,
-      target,
-      status: "SENT",
-      latencyMs: 18
-    }
-  });
+
+  const adapter = getAdapter(connection.kind);
+  const result = await adapter.send(connection, request);
+  res.json({ code: "0", data: result });
+});
+
+app.post("/api/subscriptions", (req, res) => {
+  const { connectionId = "rabbit-test", source } = req.body ?? {};
+  if (!source) {
+    res.status(400).json({ code: "400", msg: "source 必填" });
+    return;
+  }
+  try {
+    res.json({ code: "0", data: startSubscription(connectionId, source) });
+  } catch (error) {
+    res.status(404).json({ code: "404", msg: error instanceof Error ? error.message : "订阅失败" });
+  }
+});
+
+app.delete("/api/subscriptions/:id", (req, res) => {
+  res.json({ code: "0", data: stopSubscription(req.params.id) });
+});
+
+app.get("/api/subscriptions/:id/stream", (req, res) => {
+  streamSubscription(req.params.id, res);
 });
 
 app.listen(port, "127.0.0.1", () => {

@@ -18,6 +18,8 @@ interface AppState {
   resources: BrokerResource[];
   messages: MessageRecord[];
   apiOnline: boolean;
+  subscriptionStatus: string;
+  sendResult: string;
 }
 
 const state: AppState = {
@@ -33,7 +35,9 @@ const state: AppState = {
   connections: mockConnections,
   resources: mockResources,
   messages: mockMessages,
-  apiOnline: false
+  apiOnline: false,
+  subscriptionStatus: "未订阅",
+  sendResult: "等待发送"
 };
 
 const app = document.querySelector<HTMLDivElement>("#app");
@@ -166,14 +170,14 @@ function renderSubscribePage() {
       <section class="panel">
         <div class="panel-head">
           <div class="panel-title">订阅台</div>
-          <div class="panel-extra"><span class="status"><span class="dot ok"></span>消费中</span></div>
+          <div class="panel-extra"><span class="status"><span class="dot ${state.subscriptionStatus === "消费中" ? "ok" : "warn"}"></span>${state.subscriptionStatus}</span></div>
         </div>
         <div class="panel-body">
           <div class="toolbar">
             <select><option>资源类型：全部</option><option>exchange</option><option>topic</option><option>queue</option></select>
             ${renderResourcePicker("subscribe", state.selectedResource, "点击选择 exchange/topic/queue")}
             <input placeholder="关键字 / JSONPath / Header 过滤" />
-            <button class="btn">开始</button>
+            <button class="btn" data-action="start-subscription">开始</button>
             <button class="btn ghost">暂停</button>
             <button class="btn soft">清屏</button>
             <button class="btn warn">仅错误</button>
@@ -276,7 +280,7 @@ function renderSendPage() {
           </div>
           ${renderSendTargetFields()}
           <div class="hint">资源输入框点击后展示当前连接已存在的 exchange、topic 或 queue，支持搜索选择，也保留手工输入能力。</div>
-          <div class="row"><button class="btn">发送</button><button class="btn ghost">测试发送</button><button class="btn soft">保存模板</button></div>
+          <div class="row"><button class="btn" data-action="send-message">发送</button><button class="btn ghost">测试发送</button><button class="btn soft">保存模板</button></div>
         </div>
       </aside>
       <section class="panel">
@@ -300,7 +304,7 @@ x-env: test</textarea></div>
           <div class="result-box">
             <div class="panel-head"><div class="panel-title">发送结果</div></div>
             <div class="panel-body">
-              <div class="meta-line"><span>状态</span><b class="success">等待发送</b></div>
+              <div class="meta-line"><span>状态</span><b class="success">${state.sendResult}</b></div>
               <div class="meta-line"><span>目标</span><b>${state.sendTarget}</b></div>
               <div class="meta-line"><span>耗时</span><b>-</b></div>
             </div>
@@ -403,7 +407,7 @@ function closePicker() {
   state.resourceKeyword = "";
 }
 
-root.addEventListener("click", event => {
+root.addEventListener("click", async event => {
   const target = event.target as HTMLElement;
   const actionTarget = target.closest<HTMLElement>("[data-action]");
   if (!actionTarget) {
@@ -447,6 +451,44 @@ root.addEventListener("click", event => {
     state.sendTarget = selectedMessage().source;
     state.page = "send";
     closePicker();
+  }
+  if (action === "start-subscription") {
+    state.subscriptionStatus = "启动中";
+    render();
+    try {
+      const response = await fetch("http://127.0.0.1:4317/api/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId: state.activeConnectionId, source: state.selectedResource })
+      });
+      state.subscriptionStatus = response.ok ? "消费中" : "启动失败";
+      state.apiOnline = response.ok;
+    } catch {
+      state.subscriptionStatus = "Mock 消费中";
+      state.apiOnline = false;
+    }
+  }
+  if (action === "send-message") {
+    state.sendResult = "发送中";
+    render();
+    try {
+      const response = await fetch("http://127.0.0.1:4317/api/messages/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          connectionId: state.activeConnectionId,
+          protocol: state.sendProtocol,
+          target: state.sendTarget,
+          body: state.sendBody
+        })
+      });
+      const payload = await response.json();
+      state.sendResult = response.ok ? `已发送：${payload.data.messageId}` : "发送失败";
+      state.apiOnline = response.ok;
+    } catch {
+      state.sendResult = "Mock 已发送";
+      state.apiOnline = false;
+    }
   }
   render();
 });

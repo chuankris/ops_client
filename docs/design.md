@@ -25,6 +25,19 @@
 - `GET /api/resources`
 - `GET /api/messages`
 - `POST /api/messages/send`
+- `POST /api/subscriptions`
+- `DELETE /api/subscriptions/:id`
+- `GET /api/subscriptions/:id/stream`
+
+## 后端适配器边界
+
+后端已经预留 MQ 适配器接口，后续真实接入时按中间件分别实现：
+
+- `RabbitMQAdapter`
+- `KafkaAdapter`
+- `ActiveMQAdapter`
+
+适配器统一提供连接测试、资源查询、消息发送、订阅消息输出能力。当前版本先用 Mock 适配器跑通 API 形态，其中连接测试会先做 TCP 端口连通性检查。
 
 ## 核心模块
 

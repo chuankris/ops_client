@@ -1,4 +1,6 @@
-export const connections = [
+import type { BrokerResource, ConnectionProfile, MessageRecord } from "./types";
+
+export const connections: ConnectionProfile[] = [
   {
     id: "rabbit-test",
     name: "测试-RabbitMQ",
@@ -34,7 +36,7 @@ export const connections = [
   }
 ];
 
-export const resources = [
+export const resources: BrokerResource[] = [
   { id: "r-q-1", kind: "queue", broker: "RabbitMQ", name: "pdms.topic.model.data.tb_fire_tool", detail: "12 msg" },
   { id: "r-q-2", kind: "queue", broker: "RabbitMQ", name: "dif.queue.topic.processChange.plan", detail: "0 msg" },
   { id: "r-e-1", kind: "exchange", broker: "RabbitMQ", name: "amq.topic", detail: "built-in" },
@@ -45,7 +47,7 @@ export const resources = [
   { id: "a-t-1", kind: "topic", broker: "ActiveMQ", name: "topic://pdms.model.event", detail: "ActiveMQ" }
 ];
 
-export const messages = [
+export const messages: MessageRecord[] = [
   {
     id: "msg-1",
     time: "14:26:44.110",
