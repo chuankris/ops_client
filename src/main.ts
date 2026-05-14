@@ -567,7 +567,8 @@ root.addEventListener("click", async event => {
   const target = event.target as HTMLElement;
   const actionTarget = target.closest<HTMLElement>("[data-action]");
   if (!actionTarget) {
-    if (!target.closest(".resource-picker")) {
+    // Only close/re-render when resource popover is open and user clicks outside it.
+    if (state.resourcePicker && !target.closest(".resource-picker")) {
       closePicker();
       render();
     }
