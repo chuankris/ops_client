@@ -842,6 +842,14 @@ root.addEventListener("click", async event => {
   }
 
   const action = actionTarget.dataset.action;
+  if (
+    action === "change-send-protocol" ||
+    action === "update-routing-key" ||
+    action === "update-send-body" ||
+    action === "search-resource"
+  ) {
+    return;
+  }
   if (action === "page") {
     state.page = actionTarget.dataset.page as Page;
     closePicker();
