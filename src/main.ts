@@ -59,7 +59,7 @@ const state: AppState = {
 };
 
 let connectionDraft: ConnectionDraft = toDraft(activeConnection());
-let editingConnectionId: string | null = state.activeConnectionId;
+let editingConnectionId: string = state.activeConnectionId;
 let currentSubscriptionId = "";
 let subscriptionStream: EventSource | null = null;
 
@@ -148,14 +148,13 @@ function applyDraftToActive() {
           ? "SASL_SSL"
           : "queue/topic"
   };
-  if (!editingConnectionId) {
-    const id = `conn-${Date.now()}`;
-    state.connections.unshift({ id, connected: false, ...payload });
-    state.activeConnectionId = id;
-    editingConnectionId = id;
+  const existing = state.connections.find(item => item.id === editingConnectionId);
+  if (existing) {
+    state.connections = state.connections.map(item => (item.id === editingConnectionId ? { ...item, ...payload } : item));
     return;
   }
-  state.connections = state.connections.map(item => (item.id === editingConnectionId ? { ...item, ...payload } : item));
+  state.connections.unshift({ id: editingConnectionId, connected: false, ...payload });
+  state.activeConnectionId = editingConnectionId;
 }
 
 function setToast(text: string) {
@@ -685,9 +684,10 @@ root.addEventListener("click", async event => {
     return;
   }
   if (action === "new-connection") {
-    editingConnectionId = null;
+    editingConnectionId = `conn-${Date.now()}`;
+    state.activeConnectionId = editingConnectionId;
     connectionDraft = {
-      name: "新连接",
+      name: "???",
       kind: "RabbitMQ",
       host: "",
       port: 5672,
