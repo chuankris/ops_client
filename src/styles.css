@@ -63,6 +63,7 @@ button { cursor: pointer; }
 }
 .btn.ghost { background: #fff; color: var(--brand); border-color: #c7d7fb; }
 .btn.soft { background: var(--soft); color: var(--text); border-color: var(--line); }
+.btn.danger { color: var(--danger); border-color: #fecaca; background: #fff5f5; }
 .btn.warn { background: #fff7ed; color: var(--warn); border-color: #fed7aa; }
 .btn.small { height: 28px; padding: 0 8px; font-size: 12px; }
 .workspace { flex: 1 1 auto; min-height: 0; }

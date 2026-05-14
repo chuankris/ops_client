@@ -43,8 +43,8 @@ const state: AppState = {
   selectedMessageId: "",
   selectedResource: "",
   sendProtocol: "rabbit-exchange",
-  sendTarget: "amq.topic",
-  sendRoutingKey: "plan.created",
+  sendTarget: "",
+  sendRoutingKey: "",
   sendBody: "{\n  \"data\": \"test\"\n}",
   resourcePicker: null,
   resourceKeyword: "",
@@ -239,7 +239,7 @@ function renderConnectionPanel() {
         <div class="field"><label>连接名称</label><input data-field="name" value="${escapeHtml(connectionDraft.name)}" /></div>
         <div class="field">
           <label>中间件类型</label>
-          <select data-field="kind">
+          <select data-field="kind" data-preserve-focus="connection-kind">
             ${["RabbitMQ", "Kafka", "ActiveMQ"]
               .map(kind => `<option ${connectionDraft.kind === kind ? "selected" : ""}>${kind}</option>`)
               .join("")}
@@ -272,6 +272,7 @@ function renderConnectionPanel() {
               <div class="row">
                 <button class="btn ghost small" data-action="connect-connection" data-id="${item.id}">连接</button>
                 <button class="btn soft small" data-action="select-connection" data-id="${item.id}">编辑</button>
+                <button class="btn soft small danger" data-action="delete-connection" data-id="${item.id}">Delete</button>
               </div>
             </div>
           `
@@ -358,7 +359,7 @@ function renderSubscribePage() {
           </div>
           <div class="field">
             <label>发送协议</label>
-            <select data-action="change-send-protocol">
+            <select data-action="change-send-protocol" data-preserve-focus="detail-send-protocol">
               <option value="rabbit-exchange" ${state.sendProtocol === "rabbit-exchange" ? "selected" : ""}>RabbitMQ：Exchange + RoutingKey</option>
               <option value="rabbit-queue" ${state.sendProtocol === "rabbit-queue" ? "selected" : ""}>RabbitMQ：Queue</option>
               <option value="kafka-topic" ${state.sendProtocol === "kafka-topic" ? "selected" : ""}>Kafka：Topic + Key</option>
@@ -389,7 +390,7 @@ function renderSendTargetFields() {
   if (state.sendProtocol === "kafka-topic") {
     return `
       <div class="field"><label>Topic</label>${picker}</div>
-      <div class="field"><label>Key</label><input value="evt-778" /></div>
+      <div class="field"><label>Key</label><input value="" placeholder="??" /></div>
       <div class="field"><label>Partition</label><input placeholder="可选" /></div>
     `;
   }
@@ -414,7 +415,7 @@ function renderSendPage() {
           <div class="field"><label>连接</label><select>${state.connections.map(item => `<option>${item.name}</option>`).join("")}</select></div>
           <div class="field">
             <label>发送协议</label>
-            <select data-action="change-send-protocol">
+            <select data-action="change-send-protocol" data-preserve-focus="page-send-protocol">
               <option value="rabbit-exchange" ${state.sendProtocol === "rabbit-exchange" ? "selected" : ""}>RabbitMQ：Exchange + RoutingKey</option>
               <option value="rabbit-queue" ${state.sendProtocol === "rabbit-queue" ? "selected" : ""}>RabbitMQ：直接 Queue</option>
               <option value="kafka-topic" ${state.sendProtocol === "kafka-topic" ? "selected" : ""}>Kafka：Topic + Key</option>
@@ -597,6 +598,39 @@ function stopSubscriptionStream() {
   currentSubscriptionId = "";
 }
 
+async function deleteConnection(id: string) {
+  if (!id) return;
+  if (currentSubscriptionId && state.activeConnectionId === id) {
+    await fetch(`http://127.0.0.1:4317/api/subscriptions/${currentSubscriptionId}`, { method: "DELETE" }).catch(() => undefined);
+    stopSubscriptionStream();
+  }
+
+  state.connections = state.connections.filter(item => item.id !== id);
+  persistConnections();
+
+  try {
+    await fetch(`http://127.0.0.1:4317/api/connections/${id}`, { method: "DELETE" });
+  } catch {
+    // Keep local delete even when local API is unavailable.
+  }
+
+  if (state.activeConnectionId === id) {
+    const next = state.connections[0];
+    state.activeConnectionId = next?.id ?? "";
+    editingConnectionId = state.activeConnectionId || `conn-${Date.now()}`;
+    connectionDraft = toDraft(activeConnection());
+    state.resources = [];
+    state.messages = [];
+    state.selectedResource = "";
+    state.selectedMessageId = "";
+    if (next?.id) {
+      await reloadResources();
+    }
+  }
+
+  setToast("连接已删除");
+}
+
 async function testConnection() {
   applyDraftToActive();
   const profile = activeConnection();
@@ -696,6 +730,11 @@ root.addEventListener("click", async event => {
     connectionDraft = toDraft(activeConnection());
     await testConnection();
     await reloadResources();
+    return;
+  }
+  if (action === "delete-connection") {
+    await deleteConnection(actionTarget.dataset.id ?? "");
+    render();
     return;
   }
   if (action === "new-connection") {
@@ -895,15 +934,8 @@ root.addEventListener("change", event => {
   const target = event.target as HTMLSelectElement;
   if (target.dataset.action === "change-send-protocol") {
     state.sendProtocol = target.value;
-    if (state.sendProtocol === "kafka-topic") {
-      state.sendTarget = "pemc.notify.event1";
-    } else if (state.sendProtocol === "activemq-topic") {
-      state.sendTarget = "pdms.model.event";
-    } else if (state.sendProtocol === "activemq-queue") {
-      state.sendTarget = "pdms.model.queue";
-    } else {
-      state.sendTarget = "amq.topic";
-    }
+    state.sendTarget = "";
+    state.sendRoutingKey = "";
     render();
   }
 });

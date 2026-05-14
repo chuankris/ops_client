@@ -22,6 +22,13 @@ export class Repository {
     this.connections.unshift(connection);
   }
 
+  removeConnection(id: string) {
+    const index = this.connections.findIndex(item => item.id === id);
+    if (index < 0) return false;
+    this.connections.splice(index, 1);
+    return true;
+  }
+
   listResources(params: { broker?: BrokerKind; keyword?: string }) {
     const keyword = params.keyword?.trim().toLowerCase();
     return this.resources.filter(item => {

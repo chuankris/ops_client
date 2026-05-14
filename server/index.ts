@@ -29,6 +29,15 @@ app.post("/api/connections", (req, res) => {
   res.json({ code: "0", data: { id: profile.id } });
 });
 
+app.delete("/api/connections/:id", (req, res) => {
+  const removed = repository.removeConnection(req.params.id);
+  if (!removed) {
+    res.status(404).json({ code: "404", msg: "connection not found" });
+    return;
+  }
+  res.json({ code: "0", data: { id: req.params.id } });
+});
+
 app.post("/api/connections/test", async (req, res) => {
   const profile = req.body as ConnectionProfile;
   if (!profile?.kind || !profile.host || !profile.port) {
