@@ -3,6 +3,7 @@ import type { BrokerResource, ConnectionProfile, MessageRecord } from "./types";
 
 type Page = "subscribe" | "send" | "history" | "database";
 type PickerScope = "subscribe" | "send";
+type BrokerKind = ConnectionProfile["kind"];
 
 interface AppState {
   page: Page;
@@ -26,7 +27,7 @@ interface AppState {
 
 interface ConnectionDraft {
   name: string;
-  kind: ConnectionProfile["kind"];
+  kind: BrokerKind;
   host: string;
   port: number;
   managementPort?: number;
@@ -37,6 +38,19 @@ interface ConnectionDraft {
 
 const STORAGE_CONNECTIONS = "ops-client.connections";
 
+const EMPTY_MESSAGE: MessageRecord = {
+  id: "",
+  time: "",
+  broker: "RabbitMQ",
+  source: "",
+  key: "",
+  partition: "",
+  offset: "",
+  size: "",
+  status: "",
+  payload: ""
+};
+
 const state: AppState = {
   page: "subscribe",
   activeConnectionId: "",
@@ -45,7 +59,7 @@ const state: AppState = {
   sendProtocol: "rabbit-exchange",
   sendTarget: "",
   sendRoutingKey: "",
-  sendBody: "{\n  \"data\": \"test\"\n}",
+  sendBody: "",
   resourcePicker: null,
   resourceKeyword: "",
   connections: loadConnections(),
@@ -57,10 +71,10 @@ const state: AppState = {
   toast: ""
 };
 
-let connectionDraft: ConnectionDraft = toDraft(activeConnection());
-let editingConnectionId: string = state.activeConnectionId || `conn-${Date.now()}`;
+let editingConnectionId = state.activeConnectionId || `conn-${Date.now()}`;
 let currentSubscriptionId = "";
 let subscriptionStream: EventSource | null = null;
+let connectionDraft: ConnectionDraft = toDraft(activeConnection());
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("App root not found");
@@ -82,17 +96,37 @@ function persistConnections() {
   localStorage.setItem(STORAGE_CONNECTIONS, JSON.stringify(state.connections));
 }
 
+function fallbackConnection(): ConnectionProfile {
+  return {
+    id: state.activeConnectionId,
+    name: connectionDraft.name || "未保存连接",
+    kind: connectionDraft.kind,
+    host: connectionDraft.host,
+    port: connectionDraft.port,
+    managementPort: connectionDraft.managementPort,
+    vhost: connectionDraft.vhost,
+    username: connectionDraft.username,
+    password: connectionDraft.password,
+    meta: metaForDraft(connectionDraft),
+    connected: false
+  };
+}
+
 function activeConnection(): ConnectionProfile {
+  const current = state.connections.find(item => item.id === state.activeConnectionId);
+  if (current) return current;
+  if (state.activeConnectionId && editingConnectionId === state.activeConnectionId) {
+    return fallbackConnection();
+  }
   return (
-    state.connections.find(item => item.id === state.activeConnectionId) ??
     state.connections[0] ?? {
       id: "",
       name: "未选择连接",
       kind: "RabbitMQ",
       host: "",
-      port: 5672,
-      managementPort: 15672,
-      vhost: "/",
+      port: 0,
+      managementPort: 0,
+      vhost: "",
       username: "",
       password: "",
       meta: "-",
@@ -102,21 +136,26 @@ function activeConnection(): ConnectionProfile {
 }
 
 function selectedMessage(): MessageRecord {
-  return (
-    state.messages.find(item => item.id === state.selectedMessageId) ??
-    state.messages[0] ?? {
-      id: "",
-      time: "-",
-      broker: activeConnection().kind,
-      source: "-",
-      key: "-",
-      partition: "-",
-      offset: "-",
-      size: "-",
-      status: "-",
-      payload: "{\n  \"message\": \"暂无消费消息\"\n}"
-    }
-  );
+  return state.messages.find(item => item.id === state.selectedMessageId) ?? state.messages[0] ?? EMPTY_MESSAGE;
+}
+
+function metaForDraft(draft: ConnectionDraft) {
+  if (draft.kind === "RabbitMQ") return `vhost=${draft.vhost || "/"}`;
+  if (draft.kind === "Kafka") return "SASL_SSL";
+  return "queue/topic";
+}
+
+function toDraft(profile: ConnectionProfile): ConnectionDraft {
+  return {
+    name: profile.name,
+    kind: profile.kind,
+    host: profile.host,
+    port: profile.port,
+    managementPort: profile.managementPort,
+    vhost: profile.vhost,
+    username: profile.username,
+    password: profile.password
+  };
 }
 
 function filteredResources(): BrokerResource[] {
@@ -133,45 +172,6 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function toDraft(profile: ConnectionProfile): ConnectionDraft {
-  return {
-    name: profile.name,
-    kind: profile.kind,
-    host: profile.host,
-    port: profile.port,
-    managementPort: profile.managementPort,
-    vhost: profile.vhost,
-    username: profile.username,
-    password: profile.password
-  };
-}
-
-function applyDraftToActive() {
-  const payload = {
-    name: connectionDraft.name,
-    kind: connectionDraft.kind,
-    host: connectionDraft.host,
-    port: connectionDraft.port,
-    managementPort: connectionDraft.managementPort,
-    vhost: connectionDraft.vhost,
-    username: connectionDraft.username,
-    password: connectionDraft.password,
-    meta:
-      connectionDraft.kind === "RabbitMQ"
-        ? `vhost=${connectionDraft.vhost || "/"}`
-        : connectionDraft.kind === "Kafka"
-          ? "SASL_SSL"
-          : "queue/topic"
-  };
-  const existing = state.connections.find(item => item.id === editingConnectionId);
-  if (existing) {
-    state.connections = state.connections.map(item => (item.id === editingConnectionId ? { ...item, ...payload } : item));
-    return;
-  }
-  state.connections.unshift({ id: editingConnectionId, connected: false, ...payload });
-  state.activeConnectionId = editingConnectionId;
-}
-
 function setToast(text: string) {
   state.toast = text;
   render();
@@ -183,6 +183,43 @@ function setToast(text: string) {
   }, 2200);
 }
 
+function applyDraftToActive() {
+  const payload: ConnectionProfile = {
+    id: editingConnectionId,
+    name: connectionDraft.name,
+    kind: connectionDraft.kind,
+    host: connectionDraft.host,
+    port: connectionDraft.port,
+    managementPort: connectionDraft.managementPort,
+    vhost: connectionDraft.vhost,
+    username: connectionDraft.username,
+    password: connectionDraft.password,
+    meta: metaForDraft(connectionDraft),
+    connected: false
+  };
+
+  const index = state.connections.findIndex(item => item.id === editingConnectionId);
+  if (index >= 0) {
+    state.connections[index] = payload;
+  } else {
+    state.connections.unshift(payload);
+  }
+  state.activeConnectionId = editingConnectionId;
+}
+
+function closePicker() {
+  state.resourcePicker = null;
+  state.resourceKeyword = "";
+}
+
+function stopSubscriptionStream() {
+  if (subscriptionStream) {
+    subscriptionStream.close();
+    subscriptionStream = null;
+  }
+  currentSubscriptionId = "";
+}
+
 function renderTabs() {
   const tabs: Array<[Page, string]> = [
     ["subscribe", "订阅台"],
@@ -190,7 +227,6 @@ function renderTabs() {
     ["history", "历史记录"],
     ["database", "数据库任务"]
   ];
-
   return tabs
     .map(
       ([page, label]) =>
@@ -201,27 +237,44 @@ function renderTabs() {
 
 function renderResourcePicker(scope: PickerScope, value: string, placeholder: string) {
   const open = state.resourcePicker === scope;
+  const resources = filteredResources();
   return `
     <div class="resource-picker">
-      <input class="resource-input" data-action="open-picker" data-scope="${scope}" value="${escapeHtml(value)}" placeholder="${placeholder}" />
-      <button class="picker-trigger" data-action="open-picker" data-scope="${scope}" title="选择资源">⌄</button>
+      <input
+        class="resource-input"
+        data-action="open-picker"
+        data-scope="${scope}"
+        value="${escapeHtml(value)}"
+        placeholder="${placeholder}"
+      />
+      <button class="picker-trigger" data-action="open-picker" data-scope="${scope}" title="选择资源">...</button>
       <div class="resource-popover ${open ? "open" : ""}">
         <div class="popover-head">
-          <input class="popover-search" data-preserve-focus="resource-search" data-action="search-resource" value="${escapeHtml(state.resourceKeyword)}" placeholder="搜索当前连接已存在资源" />
+          <input
+            class="popover-search"
+            data-action="search-resource"
+            data-preserve-focus="resource-search"
+            value="${escapeHtml(state.resourceKeyword)}"
+            placeholder="搜索当前连接的资源"
+          />
           <button class="btn ghost small" data-action="reload-resources">刷新</button>
         </div>
         <div class="resource-list">
-          ${filteredResources()
-            .map(
-              item => `
-            <div class="resource-option" data-action="pick-resource" data-scope="${scope}" data-name="${item.name}">
-              <span class="type-pill">${item.kind}</span>
-              <span class="path">${item.name}</span>
-              <span class="count">${item.broker} · ${item.detail}</span>
-            </div>
-          `
-            )
-            .join("")}
+          ${
+            resources.length === 0
+              ? `<div class="resource-option"><span class="path">暂无资源</span><span class="count">请先保存并测试连接</span></div>`
+              : resources
+                  .map(
+                    item => `
+              <div class="resource-option" data-action="pick-resource" data-scope="${scope}" data-name="${item.name}">
+                <span class="type-pill">${item.kind}</span>
+                <span class="path">${item.name}</span>
+                <span class="count">${item.broker} | ${item.detail}</span>
+              </div>
+            `
+                  )
+                  .join("")
+          }
         </div>
       </div>
     </div>
@@ -247,11 +300,11 @@ function renderConnectionPanel() {
         </div>
         <div class="inline">
           <div class="field"><label>主机</label><input data-field="host" value="${escapeHtml(connectionDraft.host)}" /></div>
-          <div class="field"><label>端口</label><input data-field="port" value="${connectionDraft.port}" /></div>
+          <div class="field"><label>端口</label><input data-field="port" value="${connectionDraft.port || ""}" /></div>
         </div>
         <div class="inline">
-          <div class="field"><label>管理端口</label><input data-field="managementPort" value="${connectionDraft.managementPort ?? ""}" /></div>
-          <div class="field"><label>Vhost</label><input data-field="vhost" value="${escapeHtml(connectionDraft.vhost ?? "")}" /></div>
+          <div class="field"><label>管理端口</label><input data-field="managementPort" value="${connectionDraft.managementPort || ""}" /></div>
+          <div class="field"><label>Vhost</label><input data-field="vhost" value="${escapeHtml(connectionDraft.vhost || "")}" /></div>
         </div>
         <div class="inline">
           <div class="field"><label>用户名</label><input data-field="username" value="${escapeHtml(connectionDraft.username)}" /></div>
@@ -267,25 +320,33 @@ function renderConnectionPanel() {
             .map(
               item => `
             <div class="connection-card ${item.id === state.activeConnectionId ? "active" : ""}" data-action="select-connection" data-id="${item.id}">
-              <div class="card-name">${item.name}</div>
-              <div class="card-meta">${item.kind} · ${item.host}:${item.port} · ${item.meta}</div>
+              <div class="card-name">${escapeHtml(item.name)}</div>
+              <div class="card-meta">${item.kind} | ${escapeHtml(item.host)}:${item.port} | ${escapeHtml(item.meta)}</div>
               <div class="row">
                 <button class="btn ghost small" data-action="connect-connection" data-id="${item.id}">连接</button>
                 <button class="btn soft small" data-action="select-connection" data-id="${item.id}">编辑</button>
-                <button class="btn soft small danger" data-action="delete-connection" data-id="${item.id}">Delete</button>
+                <button class="btn soft small danger" data-action="delete-connection" data-id="${item.id}">删除</button>
               </div>
             </div>
           `
             )
             .join("")}
         </div>
-        <div class="field"><label>资源搜索</label><input data-action="search-resource" data-preserve-focus="resource-search" value="${escapeHtml(state.resourceKeyword)}" placeholder="搜索 exchange/topic/queue" /></div>
+        <div class="field">
+          <label>资源搜索</label>
+          <input
+            data-action="search-resource"
+            data-preserve-focus="resource-search"
+            value="${escapeHtml(state.resourceKeyword)}"
+            placeholder="搜索 exchange/topic/queue"
+          />
+        </div>
         <div class="resource-tree">
           ${filteredResources()
             .map(
               item => `
             <div class="tree-item ${item.name === state.selectedResource ? "active" : ""}" data-action="select-resource" data-name="${item.name}">
-              <span class="type-pill">${item.kind}</span>${item.name}
+              <span class="type-pill">${item.kind}</span>${escapeHtml(item.name)}
             </div>
           `
             )
@@ -299,15 +360,42 @@ function renderConnectionPanel() {
 function renderMessageRow(item: MessageRecord) {
   return `
     <tr class="${item.id === state.selectedMessageId ? "selected" : ""}" data-action="select-message" data-id="${item.id}">
-      <td>${item.time}</td>
-      <td>${item.broker}</td>
-      <td>${item.source}</td>
-      <td>${item.key}</td>
-      <td>${item.partition}</td>
-      <td>${item.offset}</td>
-      <td>${item.size}</td>
-      <td>${item.status}</td>
+      <td>${escapeHtml(item.time)}</td>
+      <td>${escapeHtml(item.broker)}</td>
+      <td>${escapeHtml(item.source)}</td>
+      <td>${escapeHtml(item.key)}</td>
+      <td>${escapeHtml(item.partition)}</td>
+      <td>${escapeHtml(item.offset)}</td>
+      <td>${escapeHtml(item.size)}</td>
+      <td>${escapeHtml(item.status)}</td>
     </tr>
+  `;
+}
+
+function renderSendTargetFields() {
+  const picker = renderResourcePicker("send", state.sendTarget, "点击选择资源");
+  if (state.sendProtocol === "rabbit-exchange") {
+    return `
+      <div class="field"><label>Exchange</label>${picker}</div>
+      <div class="field"><label>RoutingKey</label><input data-action="update-routing-key" data-preserve-focus="send-routing-key" value="${escapeHtml(state.sendRoutingKey)}" /></div>
+    `;
+  }
+  if (state.sendProtocol === "kafka-topic") {
+    return `
+      <div class="field"><label>Topic</label>${picker}</div>
+      <div class="field"><label>Key</label><input value="" placeholder="可选" /></div>
+      <div class="field"><label>Partition</label><input placeholder="可选" /></div>
+    `;
+  }
+  if (state.sendProtocol === "activemq-topic") {
+    return `
+      <div class="field"><label>Topic</label>${picker}</div>
+      <div class="field"><label>ClientId</label><input placeholder="可选" /></div>
+    `;
+  }
+  return `
+    <div class="field"><label>Queue</label>${picker}</div>
+    <div class="field"><label>Delivery Mode</label><select><option>PERSISTENT</option><option>NON_PERSISTENT</option></select></div>
   `;
 }
 
@@ -319,7 +407,7 @@ function renderSubscribePage() {
       <section class="panel">
         <div class="panel-head">
           <div class="panel-title">订阅台</div>
-          <div class="panel-extra"><span class="status"><span class="dot ${state.subscriptionStatus === "消费中" ? "ok" : "warn"}"></span>${state.subscriptionStatus}</span></div>
+          <div class="panel-extra"><span class="status"><span class="dot ${state.subscriptionStatus === "消费中" ? "ok" : "warn"}"></span>${escapeHtml(state.subscriptionStatus)}</span></div>
         </div>
         <div class="panel-body">
           <div class="toolbar">
@@ -350,12 +438,12 @@ function renderSubscribePage() {
         </div>
         <div class="panel-body">
           <div class="segmented"><button class="active">Pretty JSON</button><button>Raw</button><button>Headers</button><button>元信息</button></div>
-          <pre>${escapeHtml(message.payload)}</pre>
+          <pre>${escapeHtml(message.payload || "")}</pre>
           <div class="meta-list">
-            <div class="meta-line"><span>连接</span><b>${activeConnection().name}</b></div>
-            <div class="meta-line"><span>来源</span><b>${message.source}</b></div>
-            <div class="meta-line"><span>Key</span><b>${message.key}</b></div>
-            <div class="meta-line"><span>MessageId</span><b>${message.id}</b></div>
+            <div class="meta-line"><span>连接</span><b>${escapeHtml(activeConnection().name)}</b></div>
+            <div class="meta-line"><span>来源</span><b>${escapeHtml(message.source)}</b></div>
+            <div class="meta-line"><span>Key</span><b>${escapeHtml(message.key)}</b></div>
+            <div class="meta-line"><span>MessageId</span><b>${escapeHtml(message.id)}</b></div>
           </div>
           <div class="field">
             <label>发送协议</label>
@@ -379,52 +467,25 @@ function renderSubscribePage() {
   `;
 }
 
-function renderSendTargetFields() {
-  const picker = renderResourcePicker("send", state.sendTarget, "点击选择 exchange/topic/queue");
-  if (state.sendProtocol === "rabbit-exchange") {
-    return `
-      <div class="field"><label>Exchange</label>${picker}</div>
-      <div class="field"><label>RoutingKey</label><input data-action="update-routing-key" value="${escapeHtml(state.sendRoutingKey)}" /></div>
-    `;
-  }
-  if (state.sendProtocol === "kafka-topic") {
-    return `
-      <div class="field"><label>Topic</label>${picker}</div>
-      <div class="field"><label>Key</label><input value="" placeholder="??" /></div>
-      <div class="field"><label>Partition</label><input placeholder="可选" /></div>
-    `;
-  }
-  if (state.sendProtocol === "activemq-topic") {
-    return `
-      <div class="field"><label>Topic</label>${picker}</div>
-      <div class="field"><label>ClientId</label><input placeholder="可选" /></div>
-    `;
-  }
-  return `
-    <div class="field"><label>Queue</label>${picker}</div>
-    <div class="field"><label>Delivery Mode</label><select><option>PERSISTENT</option><option>NON_PERSISTENT</option></select></div>
-  `;
-}
-
 function renderSendPage() {
   return `
     <div class="layout-send">
       <aside class="panel">
         <div class="panel-head"><div class="panel-title">发送目标</div></div>
         <div class="panel-body">
-          <div class="field"><label>连接</label><select>${state.connections.map(item => `<option>${item.name}</option>`).join("")}</select></div>
+          <div class="field"><label>连接</label><select>${state.connections.map(item => `<option>${escapeHtml(item.name)}</option>`).join("")}</select></div>
           <div class="field">
             <label>发送协议</label>
             <select data-action="change-send-protocol" data-preserve-focus="page-send-protocol">
               <option value="rabbit-exchange" ${state.sendProtocol === "rabbit-exchange" ? "selected" : ""}>RabbitMQ：Exchange + RoutingKey</option>
-              <option value="rabbit-queue" ${state.sendProtocol === "rabbit-queue" ? "selected" : ""}>RabbitMQ：直接 Queue</option>
+              <option value="rabbit-queue" ${state.sendProtocol === "rabbit-queue" ? "selected" : ""}>RabbitMQ：Queue</option>
               <option value="kafka-topic" ${state.sendProtocol === "kafka-topic" ? "selected" : ""}>Kafka：Topic + Key</option>
               <option value="activemq-queue" ${state.sendProtocol === "activemq-queue" ? "selected" : ""}>ActiveMQ：Queue</option>
               <option value="activemq-topic" ${state.sendProtocol === "activemq-topic" ? "selected" : ""}>ActiveMQ：Topic</option>
             </select>
           </div>
           ${renderSendTargetFields()}
-          <div class="hint">资源输入框点击后会展示当前连接已有的 exchange、topic 或 queue，支持搜索选择，也保留手工输入能力。</div>
+          <div class="hint">资源输入框点击后会展示当前连接已有的 exchange、topic 或 queue，支持搜索选择，也保留手工输入。</div>
           <div class="row"><button class="btn" data-action="send-message">发送</button><button class="btn ghost">测试发送</button><button class="btn soft">保存模板</button></div>
         </div>
       </aside>
@@ -435,7 +496,7 @@ function renderSendPage() {
         </div>
         <div class="panel-body">
           <div class="segmented"><button class="active">JSON</button><button>Raw</button><button>文本</button></div>
-          <textarea class="editor" data-action="update-send-body">${escapeHtml(state.sendBody)}</textarea>
+          <textarea class="editor" data-action="update-send-body" data-preserve-focus="send-body">${escapeHtml(state.sendBody)}</textarea>
         </div>
       </section>
       <aside class="panel">
@@ -449,8 +510,8 @@ x-env: test</textarea></div>
           <div class="result-box">
             <div class="panel-head"><div class="panel-title">发送结果</div></div>
             <div class="panel-body">
-              <div class="meta-line"><span>状态</span><b class="success">${state.sendResult}</b></div>
-              <div class="meta-line"><span>目标</span><b>${state.sendTarget}</b></div>
+              <div class="meta-line"><span>状态</span><b class="success">${escapeHtml(state.sendResult)}</b></div>
+              <div class="meta-line"><span>目标</span><b>${escapeHtml(state.sendTarget)}</b></div>
               <div class="meta-line"><span>耗时</span><b>-</b></div>
             </div>
           </div>
@@ -466,7 +527,7 @@ function renderHistoryPage() {
       <aside class="panel">
         <div class="panel-head"><div class="panel-title">历史筛选</div></div>
         <div class="panel-body">
-          <div class="field"><label>连接</label><select><option>全部连接</option>${state.connections.map(item => `<option>${item.name}</option>`).join("")}</select></div>
+          <div class="field"><label>连接</label><select><option>全部连接</option>${state.connections.map(item => `<option>${escapeHtml(item.name)}</option>`).join("")}</select></div>
           <div class="field"><label>来源</label><input placeholder="topic / queue / exchange" /></div>
           <div class="field"><label>关键字</label><input placeholder="traceId / messageId / JSON字段" /></div>
           <div class="inline">
@@ -477,7 +538,7 @@ function renderHistoryPage() {
         </div>
       </aside>
       <section class="panel">
-        <div class="panel-head"><div class="panel-title">历史消息</div><div class="panel-extra"><button class="btn ghost small" data-action="fill-send">填入发送页</button></div></div>
+        <div class="panel-head"><div class="panel-title">历史消息</div></div>
         <div class="panel-body">
           <div class="table-wrap full">
             <table>
@@ -485,7 +546,7 @@ function renderHistoryPage() {
               <tbody>
                 ${state.messages
                   .map(
-                    item => `<tr data-action="select-message" data-id="${item.id}"><td>2026-05-13 ${item.time}</td><td>${item.broker}</td><td>${item.source}</td><td>${item.key}</td><td>${item.id}</td><td>${item.size}</td><td>回放</td></tr>`
+                    item => `<tr data-action="select-message" data-id="${item.id}"><td>${escapeHtml(item.time)}</td><td>${escapeHtml(item.broker)}</td><td>${escapeHtml(item.source)}</td><td>${escapeHtml(item.key)}</td><td>${escapeHtml(item.id)}</td><td>${escapeHtml(item.size)}</td><td>回放</td></tr>`
                   )
                   .join("")}
               </tbody>
@@ -538,16 +599,16 @@ function render() {
   const active = document.activeElement as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
   const preserveKey = active?.dataset?.preserveFocus;
   const preserveField = active?.dataset?.field;
-  const preserveAction = active?.dataset?.action;
   const cursor =
     active && "selectionStart" in active && typeof active.selectionStart === "number" ? active.selectionStart : null;
+
   root.innerHTML = `
     <div class="app">
       <header class="topbar">
         <div class="brand">运维 MQ 客户端</div>
         <nav class="tabs">${renderTabs()}</nav>
         <div class="top-actions">
-          <span class="status"><span class="dot ${state.apiOnline ? "ok" : "warn"}"></span>${activeConnection().name} · ${state.apiOnline ? "本地 API 在线" : "离线模式"}</span>
+          <span class="status"><span class="dot ${state.apiOnline ? "ok" : "warn"}"></span>${escapeHtml(activeConnection().name)} | ${state.apiOnline ? "本地 API 在线" : "离线模式"}</span>
           <button class="btn ghost small">导入配置</button>
           <button class="btn ghost small">导出配置</button>
         </div>
@@ -556,79 +617,73 @@ function render() {
       ${state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : ""}
     </div>
   `;
+
   if (preserveKey) {
-    const input = root.querySelector<HTMLInputElement>(`[data-preserve-focus="${preserveKey}"]`);
+    const input = root.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+      `[data-preserve-focus="${preserveKey}"]`
+    );
     input?.focus();
-    if (input && cursor !== null) {
-      input.setSelectionRange(cursor, cursor);
+    if (input && "setSelectionRange" in input && cursor !== null) {
+      (input as HTMLInputElement | HTMLTextAreaElement).setSelectionRange(cursor, cursor);
     }
     return;
   }
+
   if (preserveField) {
-    const fieldInput = root.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+    const input = root.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
       `[data-field="${preserveField}"]`
     );
-    fieldInput?.focus();
-    if (fieldInput && "setSelectionRange" in fieldInput && typeof cursor === "number") {
-      (fieldInput as HTMLInputElement | HTMLTextAreaElement).setSelectionRange(cursor, cursor);
+    input?.focus();
+    if (input && "setSelectionRange" in input && cursor !== null) {
+      (input as HTMLInputElement | HTMLTextAreaElement).setSelectionRange(cursor, cursor);
     }
+  }
+}
+
+async function reloadResources() {
+  const connection = activeConnection();
+  if (!connection.id || !connection.host || !connection.port) {
+    state.resources = [];
+    state.selectedResource = "";
+    render();
     return;
   }
-  if (preserveAction) {
-    const actionInput = root.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-      `[data-action="${preserveAction}"]`
-    );
-    actionInput?.focus();
-    if (actionInput && "setSelectionRange" in actionInput && typeof cursor === "number") {
-      (actionInput as HTMLInputElement | HTMLTextAreaElement).setSelectionRange(cursor, cursor);
-    }
-  }
-}
-
-function closePicker() {
-  state.resourcePicker = null;
-  state.resourceKeyword = "";
-}
-
-function stopSubscriptionStream() {
-  if (subscriptionStream) {
-    subscriptionStream.close();
-    subscriptionStream = null;
-  }
-  currentSubscriptionId = "";
-}
-
-async function deleteConnection(id: string) {
-  if (!id) return;
-  if (currentSubscriptionId && state.activeConnectionId === id) {
-    await fetch(`http://127.0.0.1:4317/api/subscriptions/${currentSubscriptionId}`, { method: "DELETE" }).catch(() => undefined);
-    stopSubscriptionStream();
-  }
-
-  state.connections = state.connections.filter(item => item.id !== id);
-  persistConnections();
 
   try {
-    await fetch(`http://127.0.0.1:4317/api/connections/${id}`, { method: "DELETE" });
-  } catch {
-    // Keep local delete even when local API is unavailable.
-  }
-
-  if (state.activeConnectionId === id) {
-    const next = state.connections[0];
-    state.activeConnectionId = next?.id ?? "";
-    editingConnectionId = state.activeConnectionId || `conn-${Date.now()}`;
-    connectionDraft = toDraft(activeConnection());
-    state.resources = [];
-    state.messages = [];
-    state.selectedResource = "";
-    state.selectedMessageId = "";
-    if (next?.id) {
-      await reloadResources();
+    const url = new URL("http://127.0.0.1:4317/api/resources");
+    url.searchParams.set("connectionId", connection.id);
+    if (state.resourceKeyword.trim()) {
+      url.searchParams.set("keyword", state.resourceKeyword.trim());
     }
+    const response = await fetch(url.toString());
+    if (!response.ok) return;
+    const payload = await response.json();
+    state.resources = payload.data ?? [];
+    state.selectedResource = state.resources[0]?.name ?? "";
+    state.apiOnline = true;
+    render();
+  } catch {
+    state.apiOnline = false;
+    state.resources = [];
+    state.selectedResource = "";
   }
+}
 
-  setToast("连接已删除");
+async function saveConnection() {
+  applyDraftToActive();
+  persistConnections();
+  const profile = activeConnection();
+  try {
+    await fetch("http://127.0.0.1:4317/api/connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(profile)
+    });
+  } catch {
+    // Keep local save even when API is unavailable.
+  }
+  await reloadResources();
+  setToast("连接配置已保存到本地");
 }
 
 async function testConnection() {
@@ -654,50 +709,124 @@ async function testConnection() {
   }
 }
 
-async function saveConnection() {
-  applyDraftToActive();
-  persistConnections();
-  const profile = activeConnection();
-  try {
-    await fetch("http://127.0.0.1:4317/api/connections", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(profile)
-    });
-  } catch {
-    // Keep local save even when local API is unavailable.
-  }
-  await reloadResources();
-  setToast("连接配置已保存到本地");
-}
-
 function disconnectConnection() {
   stopSubscriptionStream();
   state.subscriptionStatus = "未订阅";
   setToast("已断开（前端状态）");
 }
 
-async function reloadResources() {
+async function deleteConnection(id: string) {
+  if (!id) return;
+  if (currentSubscriptionId && state.activeConnectionId === id) {
+    await fetch(`http://127.0.0.1:4317/api/subscriptions/${currentSubscriptionId}`, { method: "DELETE" }).catch(() => undefined);
+    stopSubscriptionStream();
+  }
+
+  state.connections = state.connections.filter(item => item.id !== id);
+  persistConnections();
+
   try {
-    const connection = activeConnection();
-    const url = new URL("http://127.0.0.1:4317/api/resources");
-    url.searchParams.set("connectionId", connection.id);
-    if (state.resourceKeyword.trim()) url.searchParams.set("keyword", state.resourceKeyword.trim());
-    const response = await fetch(url.toString());
-    if (!response.ok) return;
-    const payload = await response.json();
-    state.resources = payload.data ?? [];
-    if (!state.selectedResource && state.resources.length > 0) {
-      state.selectedResource = state.resources[0].name;
-    }
-    if (state.resources.length === 0) {
-      state.selectedResource = "";
-    }
-    state.apiOnline = true;
-    render();
+    await fetch(`http://127.0.0.1:4317/api/connections/${id}`, { method: "DELETE" });
   } catch {
-    state.apiOnline = false;
+    // Keep local delete even when API is unavailable.
+  }
+
+  if (state.activeConnectionId === id) {
+    const next = state.connections[0];
+    state.activeConnectionId = next?.id ?? "";
+    editingConnectionId = state.activeConnectionId || `conn-${Date.now()}`;
+    connectionDraft = toDraft(activeConnection());
     state.resources = [];
+    state.messages = [];
+    state.selectedResource = "";
+    state.selectedMessageId = "";
+    state.sendTarget = "";
+    state.sendRoutingKey = "";
+    if (next?.id) {
+      await reloadResources();
+    }
+  }
+
+  setToast("连接已删除");
+}
+
+async function startSubscription() {
+  stopSubscriptionStream();
+  state.subscriptionStatus = "启动中";
+  render();
+  try {
+    const response = await fetch("http://127.0.0.1:4317/api/subscriptions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ connectionId: state.activeConnectionId, source: state.selectedResource })
+    });
+    if (!response.ok) {
+      state.subscriptionStatus = "启动失败";
+      state.apiOnline = false;
+      return;
+    }
+
+    const payload = await response.json();
+    currentSubscriptionId = payload?.data?.id ?? "";
+    if (currentSubscriptionId) {
+      subscriptionStream = new EventSource(`http://127.0.0.1:4317/api/subscriptions/${currentSubscriptionId}/stream`);
+      subscriptionStream.addEventListener("message", event => {
+        const record = JSON.parse((event as MessageEvent).data) as MessageRecord;
+        state.messages.unshift(record);
+        if (!state.selectedMessageId) {
+          state.selectedMessageId = record.id;
+        }
+        render();
+      });
+      subscriptionStream.addEventListener("error", () => {
+        state.subscriptionStatus = "订阅异常";
+        render();
+      });
+    }
+    state.subscriptionStatus = "消费中";
+    state.apiOnline = true;
+  } catch {
+    state.subscriptionStatus = "未订阅";
+    state.apiOnline = false;
+  }
+}
+
+async function pauseSubscription() {
+  if (currentSubscriptionId) {
+    await fetch(`http://127.0.0.1:4317/api/subscriptions/${currentSubscriptionId}`, { method: "DELETE" }).catch(() => undefined);
+  }
+  stopSubscriptionStream();
+  state.subscriptionStatus = "已暂停";
+  setToast("订阅已暂停");
+}
+
+async function sendCurrentMessage() {
+  if (!selectedMessage().id) {
+    setToast("当前没有可发送的消息");
+    return;
+  }
+  state.sendBody = selectedMessage().payload;
+  try {
+    const response = await fetch("http://127.0.0.1:4317/api/messages/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        connectionId: state.activeConnectionId,
+        protocol: state.sendProtocol,
+        target: state.sendTarget,
+        routingKey: state.sendRoutingKey,
+        body: state.sendBody
+      })
+    });
+    if (!response.ok) {
+      setToast("发送失败");
+      return;
+    }
+    const payload = await response.json();
+    state.sendResult = `已发送：${payload.data.messageId}`;
+    setToast("消息已发送");
+  } catch {
+    setToast("发送失败：本地 API 不可达");
   }
 }
 
@@ -705,7 +834,6 @@ root.addEventListener("click", async event => {
   const target = event.target as HTMLElement;
   const actionTarget = target.closest<HTMLElement>("[data-action]");
   if (!actionTarget) {
-    // Only close/re-render when resource popover is open and user clicks outside it.
     if (state.resourcePicker && !target.closest(".resource-picker")) {
       closePicker();
       render();
@@ -738,6 +866,8 @@ root.addEventListener("click", async event => {
     return;
   }
   if (action === "new-connection") {
+    stopSubscriptionStream();
+    closePicker();
     editingConnectionId = `conn-${Date.now()}`;
     state.activeConnectionId = editingConnectionId;
     connectionDraft = {
@@ -750,10 +880,14 @@ root.addEventListener("click", async event => {
       username: "",
       password: ""
     };
+    state.resourceKeyword = "";
     state.selectedResource = "";
     state.selectedMessageId = "";
+    state.sendTarget = "";
+    state.sendRoutingKey = "";
     state.resources = [];
     state.messages = [];
+    state.subscriptionStatus = "未订阅";
   }
   if (action === "select-message") {
     state.selectedMessageId = actionTarget.dataset.id ?? state.selectedMessageId;
@@ -772,35 +906,6 @@ root.addEventListener("click", async event => {
     if (scope === "subscribe") state.selectedResource = name;
     closePicker();
   }
-  if (action === "fill-send") {
-    state.sendBody = selectedMessage().payload;
-    state.sendTarget = selectedMessage().source;
-    state.page = "send";
-    closePicker();
-  }
-  if (action === "send-from-detail") {
-    state.sendBody = selectedMessage().payload;
-    const response = await fetch("http://127.0.0.1:4317/api/messages/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        connectionId: state.activeConnectionId,
-        protocol: state.sendProtocol,
-        target: state.sendTarget,
-        routingKey: state.sendRoutingKey,
-        body: state.sendBody
-      })
-    });
-    if (response.ok) {
-      const payload = await response.json();
-      state.sendResult = `已发送：${payload.data.messageId}`;
-      setToast("消息已发送");
-    } else {
-      setToast("发送失败");
-    }
-    render();
-    return;
-  }
   if (action === "test-connection") {
     await testConnection();
     return;
@@ -818,57 +923,21 @@ root.addEventListener("click", async event => {
     return;
   }
   if (action === "start-subscription") {
-    stopSubscriptionStream();
-    state.subscriptionStatus = "启动中";
-    render();
-    try {
-      const response = await fetch("http://127.0.0.1:4317/api/subscriptions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ connectionId: state.activeConnectionId, source: state.selectedResource })
-      });
-      if (response.ok) {
-        const payload = await response.json();
-        currentSubscriptionId = payload?.data?.id ?? "";
-        if (currentSubscriptionId) {
-          subscriptionStream = new EventSource(`http://127.0.0.1:4317/api/subscriptions/${currentSubscriptionId}/stream`);
-          subscriptionStream.addEventListener("message", event => {
-            const record = JSON.parse((event as MessageEvent).data) as MessageRecord;
-            state.messages.unshift(record);
-            if (!state.selectedMessageId) {
-              state.selectedMessageId = record.id;
-            }
-            render();
-          });
-          subscriptionStream.addEventListener("error", () => {
-            state.subscriptionStatus = "订阅异常";
-            render();
-          });
-        }
-        state.subscriptionStatus = "消费中";
-        state.apiOnline = true;
-      } else {
-        state.subscriptionStatus = "启动失败";
-        state.apiOnline = false;
-      }
-    } catch {
-      state.subscriptionStatus = "未订阅";
-      state.apiOnline = false;
-    }
+    await startSubscription();
   }
   if (action === "pause-subscription") {
-    if (currentSubscriptionId) {
-      await fetch(`http://127.0.0.1:4317/api/subscriptions/${currentSubscriptionId}`, { method: "DELETE" });
-    }
-    stopSubscriptionStream();
-    state.subscriptionStatus = "已暂停";
-    setToast("订阅已暂停");
+    await pauseSubscription();
     return;
   }
   if (action === "clear-messages") {
     state.messages = [];
     state.selectedMessageId = "";
     setToast("已清屏");
+    return;
+  }
+  if (action === "send-from-detail") {
+    await sendCurrentMessage();
+    render();
     return;
   }
   if (action === "send-message") {
@@ -889,7 +958,9 @@ root.addEventListener("click", async event => {
       const payload = await response.json();
       state.sendResult = response.ok ? `已发送：${payload.data.messageId}` : "发送失败";
       state.apiOnline = response.ok;
-      if (!response.ok) setToast(`发送失败：${payload.msg ?? "未知错误"}`);
+      if (!response.ok) {
+        setToast(`发送失败：${payload.msg ?? "未知错误"}`);
+      }
     } catch {
       state.sendResult = "发送失败";
       state.apiOnline = false;
@@ -909,7 +980,7 @@ root.addEventListener("input", event => {
       const num = Number(target.value);
       (connectionDraft as ConnectionDraft)[field] = Number.isFinite(num) ? num : 0;
     } else if (field === "kind") {
-      connectionDraft.kind = target.value as ConnectionProfile["kind"];
+      connectionDraft.kind = target.value as BrokerKind;
     } else {
       (connectionDraft as ConnectionDraft)[field] = target.value;
     }
@@ -918,9 +989,6 @@ root.addEventListener("input", event => {
   if (action === "search-resource") {
     state.resourceKeyword = target.value;
     render();
-    const search = document.querySelector<HTMLInputElement>(".popover-search");
-    search?.focus();
-    search?.setSelectionRange(search.value.length, search.value.length);
   }
   if (action === "update-send-body") {
     state.sendBody = target.value;
@@ -949,16 +1017,18 @@ async function loadFromApi() {
       fetch("http://127.0.0.1:4317/api/connections")
     ]);
     if (!healthRes.ok || !connectionsRes.ok) return;
+
     const connectionsPayload = await connectionsRes.json();
-    state.connections = connectionsPayload.data ?? state.connections;
+    state.connections = connectionsPayload.data ?? [];
     state.resources = [];
     state.messages = [];
     state.apiOnline = true;
     state.selectedMessageId = "";
+
     if (!state.connections.find(item => item.id === state.activeConnectionId)) {
-      state.activeConnectionId = state.connections[0]?.id ?? state.activeConnectionId;
+      state.activeConnectionId = state.connections[0]?.id ?? "";
     }
-    editingConnectionId = state.activeConnectionId;
+    editingConnectionId = state.activeConnectionId || `conn-${Date.now()}`;
     connectionDraft = toDraft(activeConnection());
     await reloadResources();
     render();
