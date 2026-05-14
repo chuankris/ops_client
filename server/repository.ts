@@ -1,10 +1,9 @@
-import { connections, messages, resources } from "./mockData";
 import type { BrokerKind, BrokerResource, ConnectionProfile, MessageRecord } from "./types";
 
 export class Repository {
-  private readonly connections: ConnectionProfile[] = connections;
-  private readonly resources: BrokerResource[] = resources;
-  private readonly messages: MessageRecord[] = messages;
+  private readonly connections: ConnectionProfile[] = [];
+  private readonly resources: BrokerResource[] = [];
+  private readonly messages: MessageRecord[] = [];
 
   listConnections() {
     return this.connections;

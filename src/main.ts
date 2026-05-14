@@ -1,5 +1,4 @@
 import "./styles.css";
-import { connections as mockConnections } from "./data";
 import type { BrokerResource, ConnectionProfile, MessageRecord } from "./types";
 
 type Page = "subscribe" | "send" | "history" | "database";
@@ -40,9 +39,9 @@ const STORAGE_CONNECTIONS = "ops-client.connections";
 
 const state: AppState = {
   page: "subscribe",
-  activeConnectionId: "rabbit-test",
+  activeConnectionId: "",
   selectedMessageId: "",
-  selectedResource: "pdms.topic.model.data.tb_fire_tool",
+  selectedResource: "",
   sendProtocol: "rabbit-exchange",
   sendTarget: "amq.topic",
   sendRoutingKey: "plan.created",
@@ -59,7 +58,7 @@ const state: AppState = {
 };
 
 let connectionDraft: ConnectionDraft = toDraft(activeConnection());
-let editingConnectionId: string = state.activeConnectionId;
+let editingConnectionId: string = state.activeConnectionId || `conn-${Date.now()}`;
 let currentSubscriptionId = "";
 let subscriptionStream: EventSource | null = null;
 
@@ -70,11 +69,11 @@ const root = app;
 function loadConnections(): ConnectionProfile[] {
   try {
     const raw = localStorage.getItem(STORAGE_CONNECTIONS);
-    if (!raw) return [...mockConnections];
+    if (!raw) return [];
     const parsed = JSON.parse(raw) as ConnectionProfile[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : [...mockConnections];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return [...mockConnections];
+    return [];
   }
 }
 
@@ -83,7 +82,22 @@ function persistConnections() {
 }
 
 function activeConnection(): ConnectionProfile {
-  return state.connections.find(item => item.id === state.activeConnectionId) ?? state.connections[0];
+  return (
+    state.connections.find(item => item.id === state.activeConnectionId) ??
+    state.connections[0] ?? {
+      id: "",
+      name: "未选择连接",
+      kind: "RabbitMQ",
+      host: "",
+      port: 5672,
+      managementPort: 15672,
+      vhost: "/",
+      username: "",
+      password: "",
+      meta: "-",
+      connected: false
+    }
+  );
 }
 
 function selectedMessage(): MessageRecord {
@@ -687,7 +701,7 @@ root.addEventListener("click", async event => {
     editingConnectionId = `conn-${Date.now()}`;
     state.activeConnectionId = editingConnectionId;
     connectionDraft = {
-      name: "???",
+      name: "新连接",
       kind: "RabbitMQ",
       host: "",
       port: 5672,
