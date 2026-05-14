@@ -1,5 +1,5 @@
 import "./styles.css";
-import { connections as mockConnections, messages as mockMessages, resources as mockResources } from "./data";
+import { connections as mockConnections } from "./data";
 import type { BrokerResource, ConnectionProfile, MessageRecord } from "./types";
 
 type Page = "subscribe" | "send" | "history" | "database";
@@ -41,17 +41,17 @@ const STORAGE_CONNECTIONS = "ops-client.connections";
 const state: AppState = {
   page: "subscribe",
   activeConnectionId: "rabbit-test",
-  selectedMessageId: "msg-1",
+  selectedMessageId: "",
   selectedResource: "pdms.topic.model.data.tb_fire_tool",
   sendProtocol: "rabbit-exchange",
   sendTarget: "amq.topic",
   sendRoutingKey: "plan.created",
-  sendBody: mockMessages[0].payload,
+  sendBody: "{\n  \"data\": \"test\"\n}",
   resourcePicker: null,
   resourceKeyword: "",
   connections: loadConnections(),
-  resources: mockResources,
-  messages: mockMessages,
+  resources: [],
+  messages: [],
   apiOnline: false,
   subscriptionStatus: "未订阅",
   sendResult: "等待发送",
@@ -59,6 +59,9 @@ const state: AppState = {
 };
 
 let connectionDraft: ConnectionDraft = toDraft(activeConnection());
+let editingConnectionId: string | null = state.activeConnectionId;
+let currentSubscriptionId = "";
+let subscriptionStream: EventSource | null = null;
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("App root not found");
@@ -84,7 +87,21 @@ function activeConnection(): ConnectionProfile {
 }
 
 function selectedMessage(): MessageRecord {
-  return state.messages.find(item => item.id === state.selectedMessageId) ?? state.messages[0];
+  return (
+    state.messages.find(item => item.id === state.selectedMessageId) ??
+    state.messages[0] ?? {
+      id: "",
+      time: "-",
+      broker: activeConnection().kind,
+      source: "-",
+      key: "-",
+      partition: "-",
+      offset: "-",
+      size: "-",
+      status: "-",
+      payload: "{\n  \"message\": \"暂无消费消息\"\n}"
+    }
+  );
 }
 
 function filteredResources(): BrokerResource[] {
@@ -115,27 +132,30 @@ function toDraft(profile: ConnectionProfile): ConnectionDraft {
 }
 
 function applyDraftToActive() {
-  state.connections = state.connections.map(item =>
-    item.id === state.activeConnectionId
-      ? {
-          ...item,
-          name: connectionDraft.name,
-          kind: connectionDraft.kind,
-          host: connectionDraft.host,
-          port: connectionDraft.port,
-          managementPort: connectionDraft.managementPort,
-          vhost: connectionDraft.vhost,
-          username: connectionDraft.username,
-          password: connectionDraft.password,
-          meta:
-            connectionDraft.kind === "RabbitMQ"
-              ? `vhost=${connectionDraft.vhost || "/"}`
-              : connectionDraft.kind === "Kafka"
-                ? "SASL_SSL"
-                : "queue/topic"
-        }
-      : item
-  );
+  const payload = {
+    name: connectionDraft.name,
+    kind: connectionDraft.kind,
+    host: connectionDraft.host,
+    port: connectionDraft.port,
+    managementPort: connectionDraft.managementPort,
+    vhost: connectionDraft.vhost,
+    username: connectionDraft.username,
+    password: connectionDraft.password,
+    meta:
+      connectionDraft.kind === "RabbitMQ"
+        ? `vhost=${connectionDraft.vhost || "/"}`
+        : connectionDraft.kind === "Kafka"
+          ? "SASL_SSL"
+          : "queue/topic"
+  };
+  if (!editingConnectionId) {
+    const id = `conn-${Date.now()}`;
+    state.connections.unshift({ id, connected: false, ...payload });
+    state.activeConnectionId = id;
+    editingConnectionId = id;
+    return;
+  }
+  state.connections = state.connections.map(item => (item.id === editingConnectionId ? { ...item, ...payload } : item));
 }
 
 function setToast(text: string) {
@@ -173,7 +193,7 @@ function renderResourcePicker(scope: PickerScope, value: string, placeholder: st
       <button class="picker-trigger" data-action="open-picker" data-scope="${scope}" title="选择资源">⌄</button>
       <div class="resource-popover ${open ? "open" : ""}">
         <div class="popover-head">
-          <input class="popover-search" data-action="search-resource" value="${escapeHtml(state.resourceKeyword)}" placeholder="搜索当前连接已存在资源" />
+          <input class="popover-search" data-preserve-focus="resource-search" data-action="search-resource" value="${escapeHtml(state.resourceKeyword)}" placeholder="搜索当前连接已存在资源" />
           <button class="btn ghost small" data-action="reload-resources">刷新</button>
         </div>
         <div class="resource-list">
@@ -244,10 +264,9 @@ function renderConnectionPanel() {
             )
             .join("")}
         </div>
-        <div class="field"><label>资源搜索</label><input placeholder="搜索 exchange/topic/queue" /></div>
+        <div class="field"><label>资源搜索</label><input data-action="search-resource" data-preserve-focus="resource-search" value="${escapeHtml(state.resourceKeyword)}" placeholder="搜索 exchange/topic/queue" /></div>
         <div class="resource-tree">
-          ${state.resources
-            .slice(0, 5)
+          ${filteredResources()
             .map(
               item => `
             <div class="tree-item ${item.name === state.selectedResource ? "active" : ""}" data-action="select-resource" data-name="${item.name}">
@@ -294,7 +313,7 @@ function renderSubscribePage() {
             <input placeholder="关键字 / JSONPath / Header 过滤" />
             <button class="btn" data-action="start-subscription">开始</button>
             <button class="btn ghost" data-action="pause-subscription">暂停</button>
-            <button class="btn soft">清屏</button>
+            <button class="btn soft" data-action="clear-messages">清屏</button>
             <button class="btn warn">仅错误</button>
           </div>
           <div class="table-wrap">
@@ -312,7 +331,7 @@ function renderSubscribePage() {
       <aside class="panel">
         <div class="panel-head">
           <div class="panel-title">消息详情</div>
-          <div class="panel-extra"><button class="btn ghost small" data-action="fill-send">重发</button></div>
+          <div class="panel-extra"></div>
         </div>
         <div class="panel-body">
           <div class="segmented"><button class="active">Pretty JSON</button><button>Raw</button><button>Headers</button><button>元信息</button></div>
@@ -323,10 +342,21 @@ function renderSubscribePage() {
             <div class="meta-line"><span>Key</span><b>${message.key}</b></div>
             <div class="meta-line"><span>MessageId</span><b>${message.id}</b></div>
           </div>
+          <div class="field">
+            <label>发送协议</label>
+            <select data-action="change-send-protocol">
+              <option value="rabbit-exchange" ${state.sendProtocol === "rabbit-exchange" ? "selected" : ""}>RabbitMQ：Exchange + RoutingKey</option>
+              <option value="rabbit-queue" ${state.sendProtocol === "rabbit-queue" ? "selected" : ""}>RabbitMQ：Queue</option>
+              <option value="kafka-topic" ${state.sendProtocol === "kafka-topic" ? "selected" : ""}>Kafka：Topic + Key</option>
+              <option value="activemq-queue" ${state.sendProtocol === "activemq-queue" ? "selected" : ""}>ActiveMQ：Queue</option>
+              <option value="activemq-topic" ${state.sendProtocol === "activemq-topic" ? "selected" : ""}>ActiveMQ：Topic</option>
+            </select>
+          </div>
+          ${renderSendTargetFields()}
           <div class="row detail-actions">
             <button class="btn ghost">复制</button>
             <button class="btn ghost">导出</button>
-            <button class="btn" data-action="fill-send">填入发送页</button>
+            <button class="btn" data-action="send-from-detail">发送到目标</button>
           </div>
         </div>
       </aside>
@@ -490,6 +520,9 @@ function renderPage() {
 }
 
 function render() {
+  const active = document.activeElement as HTMLInputElement | null;
+  const preserveKey = active?.dataset?.preserveFocus;
+  const cursor = typeof active?.selectionStart === "number" ? active.selectionStart : null;
   root.innerHTML = `
     <div class="app">
       <header class="topbar">
@@ -505,11 +538,26 @@ function render() {
       ${state.toast ? `<div class="toast">${escapeHtml(state.toast)}</div>` : ""}
     </div>
   `;
+  if (preserveKey) {
+    const input = root.querySelector<HTMLInputElement>(`[data-preserve-focus="${preserveKey}"]`);
+    input?.focus();
+    if (input && cursor !== null) {
+      input.setSelectionRange(cursor, cursor);
+    }
+  }
 }
 
 function closePicker() {
   state.resourcePicker = null;
   state.resourceKeyword = "";
+}
+
+function stopSubscriptionStream() {
+  if (subscriptionStream) {
+    subscriptionStream.close();
+    subscriptionStream = null;
+  }
+  currentSubscriptionId = "";
 }
 
 async function testConnection() {
@@ -535,13 +583,25 @@ async function testConnection() {
   }
 }
 
-function saveConnection() {
+async function saveConnection() {
   applyDraftToActive();
   persistConnections();
+  const profile = activeConnection();
+  try {
+    await fetch("http://127.0.0.1:4317/api/connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(profile)
+    });
+  } catch {
+    // Keep local save even when local API is unavailable.
+  }
+  await reloadResources();
   setToast("连接配置已保存到本地");
 }
 
 function disconnectConnection() {
+  stopSubscriptionStream();
   state.subscriptionStatus = "未订阅";
   setToast("已断开（前端状态）");
 }
@@ -555,11 +615,15 @@ async function reloadResources() {
     const response = await fetch(url.toString());
     if (!response.ok) return;
     const payload = await response.json();
-    state.resources = payload.data ?? state.resources;
+    state.resources = payload.data ?? [];
+    if (!state.selectedResource && state.resources.length > 0) {
+      state.selectedResource = state.resources[0].name;
+    }
     state.apiOnline = true;
     render();
   } catch {
     state.apiOnline = false;
+    state.resources = [];
   }
 }
 
@@ -582,13 +646,32 @@ root.addEventListener("click", async event => {
   }
   if (action === "select-connection") {
     state.activeConnectionId = actionTarget.dataset.id ?? state.activeConnectionId;
+    editingConnectionId = state.activeConnectionId;
     connectionDraft = toDraft(activeConnection());
+    await reloadResources();
   }
   if (action === "connect-connection") {
     state.activeConnectionId = actionTarget.dataset.id ?? state.activeConnectionId;
+    editingConnectionId = state.activeConnectionId;
     connectionDraft = toDraft(activeConnection());
     await testConnection();
+    await reloadResources();
     return;
+  }
+  if (action === "new-connection") {
+    editingConnectionId = null;
+    connectionDraft = {
+      name: "新连接",
+      kind: "RabbitMQ",
+      host: "",
+      port: 5672,
+      managementPort: 15672,
+      vhost: "/",
+      username: "guest",
+      password: "guest"
+    };
+    state.selectedResource = "";
+    state.resources = [];
   }
   if (action === "select-message") {
     state.selectedMessageId = actionTarget.dataset.id ?? state.selectedMessageId;
@@ -613,12 +696,35 @@ root.addEventListener("click", async event => {
     state.page = "send";
     closePicker();
   }
+  if (action === "send-from-detail") {
+    state.sendBody = selectedMessage().payload;
+    const response = await fetch("http://127.0.0.1:4317/api/messages/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        connectionId: state.activeConnectionId,
+        protocol: state.sendProtocol,
+        target: state.sendTarget,
+        routingKey: state.sendRoutingKey,
+        body: state.sendBody
+      })
+    });
+    if (response.ok) {
+      const payload = await response.json();
+      state.sendResult = `已发送：${payload.data.messageId}`;
+      setToast("消息已发送");
+    } else {
+      setToast("发送失败");
+    }
+    render();
+    return;
+  }
   if (action === "test-connection") {
     await testConnection();
     return;
   }
   if (action === "save-connection") {
-    saveConnection();
+    await saveConnection();
     return;
   }
   if (action === "disconnect-connection") {
@@ -630,6 +736,7 @@ root.addEventListener("click", async event => {
     return;
   }
   if (action === "start-subscription") {
+    stopSubscriptionStream();
     state.subscriptionStatus = "启动中";
     render();
     try {
@@ -638,16 +745,48 @@ root.addEventListener("click", async event => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ connectionId: state.activeConnectionId, source: state.selectedResource })
       });
-      state.subscriptionStatus = response.ok ? "消费中" : "启动失败";
-      state.apiOnline = response.ok;
+      if (response.ok) {
+        const payload = await response.json();
+        currentSubscriptionId = payload?.data?.id ?? "";
+        if (currentSubscriptionId) {
+          subscriptionStream = new EventSource(`http://127.0.0.1:4317/api/subscriptions/${currentSubscriptionId}/stream`);
+          subscriptionStream.addEventListener("message", event => {
+            const record = JSON.parse((event as MessageEvent).data) as MessageRecord;
+            state.messages.unshift(record);
+            if (!state.selectedMessageId) {
+              state.selectedMessageId = record.id;
+            }
+            render();
+          });
+          subscriptionStream.addEventListener("error", () => {
+            state.subscriptionStatus = "订阅异常";
+            render();
+          });
+        }
+        state.subscriptionStatus = "消费中";
+        state.apiOnline = true;
+      } else {
+        state.subscriptionStatus = "启动失败";
+        state.apiOnline = false;
+      }
     } catch {
       state.subscriptionStatus = "未订阅";
       state.apiOnline = false;
     }
   }
   if (action === "pause-subscription") {
+    if (currentSubscriptionId) {
+      await fetch(`http://127.0.0.1:4317/api/subscriptions/${currentSubscriptionId}`, { method: "DELETE" });
+    }
+    stopSubscriptionStream();
     state.subscriptionStatus = "已暂停";
     setToast("订阅已暂停");
+    return;
+  }
+  if (action === "clear-messages") {
+    state.messages = [];
+    state.selectedMessageId = "";
+    setToast("已清屏");
     return;
   }
   if (action === "send-message") {
@@ -730,25 +869,23 @@ render();
 
 async function loadFromApi() {
   try {
-    const [healthRes, connectionsRes, resourcesRes, messagesRes] = await Promise.all([
+    const [healthRes, connectionsRes] = await Promise.all([
       fetch("http://127.0.0.1:4317/api/health"),
-      fetch("http://127.0.0.1:4317/api/connections"),
-      fetch("http://127.0.0.1:4317/api/resources"),
-      fetch("http://127.0.0.1:4317/api/messages")
+      fetch("http://127.0.0.1:4317/api/connections")
     ]);
-    if (!healthRes.ok || !connectionsRes.ok || !resourcesRes.ok || !messagesRes.ok) return;
+    if (!healthRes.ok || !connectionsRes.ok) return;
     const connectionsPayload = await connectionsRes.json();
-    const resourcesPayload = await resourcesRes.json();
-    const messagesPayload = await messagesRes.json();
     state.connections = connectionsPayload.data ?? state.connections;
-    state.resources = resourcesPayload.data ?? state.resources;
-    state.messages = messagesPayload.data ?? state.messages;
+    state.resources = [];
+    state.messages = [];
     state.apiOnline = true;
-    state.sendBody = state.messages[0]?.payload ?? state.sendBody;
+    state.selectedMessageId = "";
     if (!state.connections.find(item => item.id === state.activeConnectionId)) {
       state.activeConnectionId = state.connections[0]?.id ?? state.activeConnectionId;
     }
+    editingConnectionId = state.activeConnectionId;
     connectionDraft = toDraft(activeConnection());
+    await reloadResources();
     render();
   } catch {
     state.apiOnline = false;

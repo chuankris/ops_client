@@ -14,6 +14,15 @@ export class Repository {
     return this.connections.find(item => item.id === id);
   }
 
+  upsertConnection(connection: ConnectionProfile) {
+    const index = this.connections.findIndex(item => item.id === connection.id);
+    if (index >= 0) {
+      this.connections[index] = connection;
+      return;
+    }
+    this.connections.unshift(connection);
+  }
+
   listResources(params: { broker?: BrokerKind; keyword?: string }) {
     const keyword = params.keyword?.trim().toLowerCase();
     return this.resources.filter(item => {

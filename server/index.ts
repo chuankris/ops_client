@@ -19,6 +19,16 @@ app.get("/api/connections", (_req, res) => {
   res.json({ code: "0", data: repository.listConnections() });
 });
 
+app.post("/api/connections", (req, res) => {
+  const profile = req.body as ConnectionProfile;
+  if (!profile?.id || !profile?.kind || !profile.host || !profile.port) {
+    res.status(400).json({ code: "400", msg: "id/kind/host/port required" });
+    return;
+  }
+  repository.upsertConnection(profile);
+  res.json({ code: "0", data: { id: profile.id } });
+});
+
 app.post("/api/connections/test", async (req, res) => {
   const profile = req.body as ConnectionProfile;
   if (!profile?.kind || !profile.host || !profile.port) {
