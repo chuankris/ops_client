@@ -1,13 +1,8 @@
 import { BaseMockAdapter } from "./baseAdapter";
 import { ActiveMqAdapter } from "./activeMqAdapter";
+import { KafkaAdapter } from "./kafkaAdapter";
 import { RabbitMqAdapter } from "./rabbitMqAdapter";
 import type { BrokerKind } from "../types";
-
-class KafkaAdapter extends BaseMockAdapter {
-  constructor() {
-    super("Kafka");
-  }
-}
 
 const adapters = {
   RabbitMQ: new RabbitMqAdapter(),

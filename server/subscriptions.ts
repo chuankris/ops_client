@@ -1,4 +1,5 @@
 import type { Response } from "express";
+import { Kafka, logLevel } from "kafkajs";
 import stompit from "stompit";
 import { getAdapter } from "./adapters";
 import { repository } from "./repository";
@@ -59,6 +60,8 @@ export function streamSubscription(id: string, res: Response) {
 
   if (connection.kind === "ActiveMQ") {
     startActiveMqStream(session, res);
+  } else if (connection.kind === "Kafka") {
+    void startKafkaStream(session, res);
   } else {
     session.timer = setInterval(() => {
       const message = adapter.sampleMessage(connection, session.source);
@@ -76,6 +79,55 @@ export function streamSubscription(id: string, res: Response) {
       clearInterval(session.timer);
     }
   });
+}
+
+async function startKafkaStream(session: SubscriptionSession, res: Response) {
+  const connection = repository.getConnection(session.connectionId);
+  if (!connection) return;
+  const topic = toKafkaTopic(session.source);
+  const kafka = new Kafka({
+    clientId: `ops-client-sub-${connection.id}`,
+    brokers: [`${connection.host}:${connection.port}`],
+    connectionTimeout: 3000,
+    requestTimeout: 5000,
+    retry: { retries: 1 },
+    logLevel: logLevel.NOTHING
+  });
+  const consumer = kafka.consumer({
+    groupId: `ops-client-group-${Date.now()}`
+  });
+
+  try {
+    await consumer.connect();
+    await consumer.subscribe({ topic, fromBeginning: false });
+    await consumer.run({
+      eachMessage: async ({ partition, message }) => {
+        const payloadRaw = message.value?.toString("utf8") ?? "";
+        const record: MessageRecord = {
+          id: `stream-${Date.now()}`,
+          time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
+          broker: "Kafka",
+          source: topic,
+          key: message.key?.toString("utf8") ?? "",
+          partition: String(partition),
+          offset: message.offset,
+          size: `${message.size ?? Buffer.byteLength(payloadRaw, "utf8")}B`,
+          status: "OK",
+          payload: toPrettyPayload(payloadRaw)
+        };
+        repository.appendMessage(record);
+        res.write(`event: message\n`);
+        res.write(`data: ${JSON.stringify(record)}\n\n`);
+      }
+    });
+  } catch (error) {
+    res.write(`event: error\n`);
+    res.write(`data: ${JSON.stringify({ message: error instanceof Error ? error.message : "Kafka subscribe failed" })}\n\n`);
+  }
+
+  session.stopRealtime = () => {
+    void consumer.disconnect().catch(() => undefined);
+  };
 }
 
 function startActiveMqStream(session: SubscriptionSession, res: Response) {
@@ -134,6 +186,12 @@ function toActiveMqDestination(source: string) {
   if (source.startsWith("queue://")) return `/queue/${source.slice("queue://".length)}`;
   if (source.startsWith("topic://")) return `/topic/${source.slice("topic://".length)}`;
   return `/queue/${source}`;
+}
+
+function toKafkaTopic(source: string) {
+  if (source.startsWith("topic://")) return source.slice("topic://".length);
+  if (source.startsWith("/topic/")) return source.slice("/topic/".length);
+  return source;
 }
 
 function buildActiveMqMessage(connectionName: string, source: string, body: string): MessageRecord {
