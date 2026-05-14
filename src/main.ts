@@ -520,9 +520,12 @@ function renderPage() {
 }
 
 function render() {
-  const active = document.activeElement as HTMLInputElement | null;
+  const active = document.activeElement as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
   const preserveKey = active?.dataset?.preserveFocus;
-  const cursor = typeof active?.selectionStart === "number" ? active.selectionStart : null;
+  const preserveField = active?.dataset?.field;
+  const preserveAction = active?.dataset?.action;
+  const cursor =
+    active && "selectionStart" in active && typeof active.selectionStart === "number" ? active.selectionStart : null;
   root.innerHTML = `
     <div class="app">
       <header class="topbar">
@@ -543,6 +546,26 @@ function render() {
     input?.focus();
     if (input && cursor !== null) {
       input.setSelectionRange(cursor, cursor);
+    }
+    return;
+  }
+  if (preserveField) {
+    const fieldInput = root.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+      `[data-field="${preserveField}"]`
+    );
+    fieldInput?.focus();
+    if (fieldInput && "setSelectionRange" in fieldInput && typeof cursor === "number") {
+      (fieldInput as HTMLInputElement | HTMLTextAreaElement).setSelectionRange(cursor, cursor);
+    }
+    return;
+  }
+  if (preserveAction) {
+    const actionInput = root.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+      `[data-action="${preserveAction}"]`
+    );
+    actionInput?.focus();
+    if (actionInput && "setSelectionRange" in actionInput && typeof cursor === "number") {
+      (actionInput as HTMLInputElement | HTMLTextAreaElement).setSelectionRange(cursor, cursor);
     }
   }
 }
@@ -618,6 +641,9 @@ async function reloadResources() {
     state.resources = payload.data ?? [];
     if (!state.selectedResource && state.resources.length > 0) {
       state.selectedResource = state.resources[0].name;
+    }
+    if (state.resources.length === 0) {
+      state.selectedResource = "";
     }
     state.apiOnline = true;
     render();

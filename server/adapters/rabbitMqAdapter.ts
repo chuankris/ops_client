@@ -1,6 +1,5 @@
 import amqp from "amqplib";
 import type { Channel, ChannelModel } from "amqplib";
-import { repository } from "../repository";
 import { BaseMockAdapter } from "./baseAdapter";
 import type { BrokerResource, ConnectionProfile, ConnectionTestResult, SendRequest, SendResult } from "../types";
 
@@ -39,7 +38,7 @@ export class RabbitMqAdapter extends BaseMockAdapter {
   override async listResources(profile: ConnectionProfile, keyword?: string): Promise<BrokerResource[]> {
     const managementPort = profile.managementPort;
     if (!managementPort) {
-      return repository.listResources({ broker: "RabbitMQ", keyword });
+      return [];
     }
 
     try {
@@ -73,7 +72,7 @@ export class RabbitMqAdapter extends BaseMockAdapter {
       }
       return mapped.filter(item => `${item.kind} ${item.name} ${item.detail}`.toLowerCase().includes(lowerKeyword));
     } catch {
-      return repository.listResources({ broker: "RabbitMQ", keyword });
+      return [];
     }
   }
 
