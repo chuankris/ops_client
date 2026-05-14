@@ -288,6 +288,19 @@ pre {
 }
 .empty-title { font-weight: 700; margin-bottom: 8px; }
 
+.toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  background: #111827;
+  color: #fff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .24);
+  z-index: 50;
+  font-size: 13px;
+}
+
 @media (max-width: 1180px) {
   .layout-subscribe, .layout-send, .layout-history, .layout-db {
     grid-template-columns: 1fr;
