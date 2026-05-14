@@ -11,6 +11,7 @@ interface AppState {
   selectedResource: string;
   sendProtocol: string;
   sendTarget: string;
+  sendRoutingKey: string;
   sendBody: string;
   resourcePicker: null | "subscribe" | "send";
   resourceKeyword: string;
@@ -29,6 +30,7 @@ const state: AppState = {
   selectedResource: "pdms.topic.model.data.tb_fire_tool",
   sendProtocol: "rabbit-exchange",
   sendTarget: "amq.topic",
+  sendRoutingKey: "plan.created",
   sendBody: mockMessages[0].payload,
   resourcePicker: null,
   resourceKeyword: "",
@@ -239,7 +241,7 @@ function renderSendTargetFields() {
   if (state.sendProtocol === "rabbit-exchange") {
     return `
       <div class="field"><label>Exchange</label>${targetPicker}</div>
-      <div class="field"><label>RoutingKey</label><input data-action="update-routing-key" value="${state.sendTarget === "amq.topic" ? "plan.created" : ""}" /></div>
+      <div class="field"><label>RoutingKey</label><input data-action="update-routing-key" value="${escapeHtml(state.sendRoutingKey)}" /></div>
     `;
   }
   if (state.sendProtocol === "kafka-topic") {
@@ -479,6 +481,7 @@ root.addEventListener("click", async event => {
           connectionId: state.activeConnectionId,
           protocol: state.sendProtocol,
           target: state.sendTarget,
+          routingKey: state.sendRoutingKey,
           body: state.sendBody
         })
       });
@@ -505,6 +508,9 @@ root.addEventListener("input", event => {
   }
   if (action === "update-send-body") {
     state.sendBody = target.value;
+  }
+  if (action === "update-routing-key") {
+    state.sendRoutingKey = target.value;
   }
 });
 

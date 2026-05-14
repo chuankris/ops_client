@@ -7,6 +7,8 @@ export const connections: ConnectionProfile[] = [
     kind: "RabbitMQ",
     host: "10.19.158.37",
     port: 6005,
+    managementPort: 8075,
+    vhost: "/",
     username: "root",
     password: "123456",
     meta: "vhost=/",

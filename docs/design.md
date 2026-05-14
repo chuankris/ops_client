@@ -39,6 +39,23 @@
 
 适配器统一提供连接测试、资源查询、消息发送、订阅消息输出能力。当前版本先用 Mock 适配器跑通 API 形态，其中连接测试会先做 TCP 端口连通性检查。
 
+## RabbitMQ 当前进展
+
+RabbitMQ 已经接入第一版真实适配器：
+
+- 连接测试：使用 AMQP 协议连接并返回耗时和错误信息。
+- 资源查询：优先调用 RabbitMQ Management API 获取 queues 和 exchanges；如果管理端口不可达，会回退到本地 Mock 资源。
+- 消息发送：支持 `Exchange + RoutingKey` 和直接发送到 `Queue`。
+
+连接参数需要包含：
+
+- `host`
+- `port`：AMQP 端口
+- `managementPort`：RabbitMQ 管理端口
+- `vhost`
+- `username`
+- `password`
+
 ## 核心模块
 
 ### 连接中心

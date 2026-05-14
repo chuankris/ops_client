@@ -7,6 +7,8 @@ export interface ConnectionProfile {
   kind: BrokerKind;
   host: string;
   port: number;
+  managementPort?: number;
+  vhost?: string;
   username: string;
   password: string;
   meta: string;

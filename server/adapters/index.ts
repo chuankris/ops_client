@@ -1,11 +1,6 @@
 import { BaseMockAdapter } from "./baseAdapter";
+import { RabbitMqAdapter } from "./rabbitMqAdapter";
 import type { BrokerKind } from "../types";
-
-class RabbitMqAdapter extends BaseMockAdapter {
-  constructor() {
-    super("RabbitMQ");
-  }
-}
 
 class KafkaAdapter extends BaseMockAdapter {
   constructor() {
