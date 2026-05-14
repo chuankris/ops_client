@@ -713,7 +713,15 @@ root.addEventListener("change", event => {
   const target = event.target as HTMLSelectElement;
   if (target.dataset.action === "change-send-protocol") {
     state.sendProtocol = target.value;
-    state.sendTarget = state.sendProtocol === "kafka-topic" ? "pemc.notify.event1" : "amq.topic";
+    if (state.sendProtocol === "kafka-topic") {
+      state.sendTarget = "pemc.notify.event1";
+    } else if (state.sendProtocol === "activemq-topic") {
+      state.sendTarget = "pdms.model.event";
+    } else if (state.sendProtocol === "activemq-queue") {
+      state.sendTarget = "pdms.model.queue";
+    } else {
+      state.sendTarget = "amq.topic";
+    }
     render();
   }
 });
