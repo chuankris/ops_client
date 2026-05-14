@@ -71,7 +71,8 @@ function loadConnections(): ConnectionProfile[] {
     const raw = localStorage.getItem(STORAGE_CONNECTIONS);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as ConnectionProfile[];
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(item => !["rabbit-test", "kafka-pre", "amq-dev"].includes(item.id));
   } catch {
     return [];
   }
@@ -701,17 +702,19 @@ root.addEventListener("click", async event => {
     editingConnectionId = `conn-${Date.now()}`;
     state.activeConnectionId = editingConnectionId;
     connectionDraft = {
-      name: "新连接",
+      name: "",
       kind: "RabbitMQ",
       host: "",
-      port: 5672,
-      managementPort: 15672,
-      vhost: "/",
-      username: "guest",
-      password: "guest"
+      port: 0,
+      managementPort: 0,
+      vhost: "",
+      username: "",
+      password: ""
     };
     state.selectedResource = "";
+    state.selectedMessageId = "";
     state.resources = [];
+    state.messages = [];
   }
   if (action === "select-message") {
     state.selectedMessageId = actionTarget.dataset.id ?? state.selectedMessageId;
