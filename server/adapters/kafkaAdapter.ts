@@ -1,5 +1,4 @@
 import { Kafka, logLevel, type Producer } from "kafkajs";
-import { repository } from "../repository";
 import { BaseMockAdapter } from "./baseAdapter";
 import type { BrokerResource, ConnectionProfile, ConnectionTestResult, SendRequest, SendResult } from "../types";
 
@@ -48,7 +47,7 @@ export class KafkaAdapter extends BaseMockAdapter {
       if (!lowerKeyword) return mapped;
       return mapped.filter(item => item.name.toLowerCase().includes(lowerKeyword));
     } catch {
-      return repository.listResources({ broker: "Kafka", keyword });
+      return [];
     } finally {
       await admin.disconnect().catch(() => undefined);
     }

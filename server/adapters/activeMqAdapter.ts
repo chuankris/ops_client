@@ -1,5 +1,4 @@
 import stompit from "stompit";
-import { repository } from "../repository";
 import { BaseMockAdapter } from "./baseAdapter";
 import type { BrokerResource, ConnectionProfile, ConnectionTestResult, SendRequest, SendResult } from "../types";
 
@@ -35,7 +34,45 @@ export class ActiveMqAdapter extends BaseMockAdapter {
   }
 
   override async listResources(_profile: ConnectionProfile, keyword?: string): Promise<BrokerResource[]> {
-    return repository.listResources({ broker: "ActiveMQ", keyword });
+    const managementPort = _profile.managementPort;
+    if (!managementPort) {
+      return [];
+    }
+
+    try {
+      const [queues, topics] = await Promise.all([
+        searchDestinations(_profile, managementPort, "Queue"),
+        searchDestinations(_profile, managementPort, "Topic")
+      ]);
+
+      const mapped: BrokerResource[] = [
+        ...queues.map(name => ({
+          id: `activemq-queue-${name}`,
+          kind: "queue" as const,
+          broker: "ActiveMQ" as const,
+          name,
+          detail: "queue"
+        })),
+        ...topics
+          .filter(name => !name.startsWith("ActiveMQ.Advisory"))
+          .map(name => ({
+            id: `activemq-topic-${name}`,
+            kind: "topic" as const,
+            broker: "ActiveMQ" as const,
+            name,
+            detail: "topic"
+          }))
+      ];
+
+      const lowerKeyword = keyword?.trim().toLowerCase();
+      if (!lowerKeyword) {
+        return mapped;
+      }
+
+      return mapped.filter(item => `${item.kind} ${item.name} ${item.detail}`.toLowerCase().includes(lowerKeyword));
+    } catch {
+      return [];
+    }
   }
 
   override async send(profile: ConnectionProfile, request: SendRequest): Promise<SendResult> {
@@ -108,4 +145,51 @@ function closeStomp(client?: StompClient) {
       resolve();
     }
   });
+}
+
+async function searchDestinations(
+  profile: ConnectionProfile,
+  managementPort: number,
+  destinationType: "Queue" | "Topic"
+): Promise<string[]> {
+  const encodedPattern = encodeURIComponent(
+    `org.apache.activemq:type=Broker,brokerName=*,destinationType=${destinationType},destinationName=*`
+  );
+  const url = `http://${profile.host}:${managementPort}/api/jolokia/search/${encodedPattern}`;
+  const response = await fetchWithBasicAuth(url, profile, 2500);
+
+  if (!response.ok) {
+    throw new Error(`ActiveMQ management request failed: ${response.status}`);
+  }
+
+  const payload = (await response.json()) as { value?: string[] };
+  const objectNames = Array.isArray(payload.value) ? payload.value : [];
+  return objectNames
+    .map(readDestinationName)
+    .filter((name): name is string => Boolean(name))
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function readDestinationName(objectName: string): string | null {
+  const marker = "destinationName=";
+  const index = objectName.indexOf(marker);
+  if (index < 0) return null;
+  return objectName.slice(index + marker.length);
+}
+
+async function fetchWithBasicAuth(url: string, profile: ConnectionProfile, timeoutMs: number) {
+  const auth = Buffer.from(`${profile.username}:${profile.password}`).toString("base64");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        Authorization: `Basic ${auth}`,
+        Origin: "http://localhost"
+      }
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 }

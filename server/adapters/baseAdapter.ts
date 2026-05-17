@@ -1,7 +1,6 @@
 import net from "node:net";
-import { repository } from "../repository";
 import type { MqAdapter } from "./MqAdapter";
-import type { BrokerKind, ConnectionProfile, ConnectionTestResult, MessageRecord, SendRequest, SendResult } from "../types";
+import type { BrokerKind, BrokerResource, ConnectionProfile, ConnectionTestResult, SendRequest, SendResult } from "../types";
 
 export abstract class BaseMockAdapter implements MqAdapter {
   protected constructor(private readonly broker: BrokerKind) {}
@@ -16,38 +15,14 @@ export abstract class BaseMockAdapter implements MqAdapter {
     };
   }
 
-  async listResources(_profile: ConnectionProfile, keyword?: string) {
-    return repository.listResources({ broker: this.broker, keyword });
+  async listResources(_profile: ConnectionProfile, keyword?: string): Promise<BrokerResource[]> {
+    void keyword;
+    return [];
   }
 
   async send(_profile: ConnectionProfile, request: SendRequest): Promise<SendResult> {
-    return {
-      messageId: `local-${Date.now()}`,
-      protocol: request.protocol,
-      target: request.target,
-      status: "SENT",
-      latencyMs: 18
-    };
-  }
-
-  sampleMessage(profile: ConnectionProfile, source: string): MessageRecord {
-    return {
-      id: `stream-${Date.now()}`,
-      time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-      broker: profile.kind,
-      source,
-      key: profile.kind === "Kafka" ? "mock-key" : "mock.routing",
-      partition: profile.kind === "Kafka" ? "0" : "-",
-      offset: profile.kind === "Kafka" ? String(Math.floor(Math.random() * 100000)) : "-",
-      size: "1.2KB",
-      status: "OK",
-      payload: JSON.stringify({
-        eventType: "MOCK_MESSAGE",
-        broker: profile.kind,
-        source,
-        traceId: `trace-${Date.now()}`
-      }, null, 2)
-    };
+    void request;
+    throw new Error(`${this.broker} send not implemented`);
   }
 }
 

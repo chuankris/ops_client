@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MQ Tool V1 Prototype</title>
+    <style>
+      :root {
+        --bg: #f4efe8;
+        --panel: rgba(255, 251, 246, 0.92);
+        --panel-strong: #fffdf9;
+        --line: rgba(121, 91, 62, 0.16);
+        --line-strong: rgba(121, 91, 62, 0.3);
+        --text: #2e241d;
+        --muted: #766759;
+        --accent: #c35a2b;
+        --accent-soft: rgba(195, 90, 43, 0.1);
+        --ok: #1f7d58;
+        --warn: #c0851a;
+        --shadow: 0 18px 42px rgba(86, 59, 33, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(201, 150, 101, 0.22), transparent 30%),
+          radial-gradient(circle at right, rgba(134, 166, 128, 0.14), transparent 28%),
+          linear-gradient(180deg, #f6f1e9 0%, #ece4d9 100%);
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .shell {
+        padding: 18px;
+      }
+
+      .app {
+        max-width: 1560px;
+        margin: 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 28px;
+        background: rgba(255, 250, 244, 0.78);
+        backdrop-filter: blur(14px);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--line);
+        background: linear-gradient(180deg, rgba(255, 252, 249, 0.96), rgba(255, 247, 239, 0.76));
+      }
+
+      .brand {
+        min-width: 240px;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+
+      .brand p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: rgba(31, 125, 88, 0.11);
+        border: 1px solid rgba(31, 125, 88, 0.16);
+        color: #1e6548;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--ok);
+        box-shadow: 0 0 0 5px rgba(31, 125, 88, 0.08);
+      }
+
+      .top-actions {
+        margin-left: auto;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.5fr 1fr;
+        gap: 14px;
+        padding: 18px 22px 0;
+      }
+
+      .hero-card,
+      .hero-note {
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 18px;
+        background: var(--panel);
+      }
+
+      .hero-card {
+        background:
+          linear-gradient(135deg, rgba(195, 90, 43, 0.08), rgba(255, 249, 242, 0.78)),
+          var(--panel);
+      }
+
+      .hero-kicker {
+        font-size: 12px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .hero-title {
+        margin-top: 8px;
+        max-width: 16ch;
+        font-size: 32px;
+        line-height: 1.08;
+        font-weight: 700;
+      }
+
+      .hero-copy {
+        margin-top: 10px;
+        max-width: 56ch;
+        line-height: 1.65;
+        color: var(--muted);
+      }
+
+      .hero-metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .metric {
+        padding: 14px;
+        border-radius: 18px;
+        border: 1px solid rgba(121, 91, 62, 0.12);
+        background: rgba(255, 255, 255, 0.56);
+      }
+
+      .metric span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 6px;
+        font-size: 22px;
+      }
+
+      .hero-note h3 {
+        margin: 0 0 10px;
+        font-size: 16px;
+      }
+
+      .hero-note p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .workspace {
+        padding: 18px 22px 22px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 330px minmax(540px, 1fr) 360px;
+        gap: 14px;
+      }
+
+      .panel {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        overflow: hidden;
+        background: var(--panel);
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .panel-head h3 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .panel-head small {
+        color: var(--muted);
+      }
+
+      .panel-extra {
+        margin-left: auto;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .panel-body {
+        padding: 16px 18px 18px;
+      }
+
+      .field {
+        margin-bottom: 13px;
+      }
+
+      .field label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 7px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.76);
+        color: var(--text);
+        outline: none;
+      }
+
+      input,
+      select {
+        height: 42px;
+        padding: 0 14px;
+      }
+
+      textarea {
+        min-height: 160px;
+        resize: vertical;
+        padding: 14px;
+        line-height: 1.6;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus {
+        border-color: rgba(195, 90, 43, 0.42);
+        box-shadow: 0 0 0 4px rgba(195, 90, 43, 0.08);
+      }
+
+      .split-2 {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .stack {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .btn,
+      .btn-soft,
+      .btn-ghost {
+        height: 40px;
+        padding: 0 16px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+      }
+
+      .btn {
+        background: var(--accent);
+        color: #fff7f1;
+      }
+
+      .btn-soft {
+        background: var(--accent-soft);
+        color: #91401f;
+        border-color: rgba(195, 90, 43, 0.14);
+      }
+
+      .btn-ghost {
+        background: transparent;
+        color: var(--text);
+        border-color: var(--line);
+      }
+
+      .pill,
+      .type-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+      }
+
+      .pill {
+        background: rgba(31, 125, 88, 0.1);
+        color: var(--ok);
+      }
+
+      .type-pill {
+        background: rgba(118, 103, 89, 0.09);
+        color: var(--muted);
+      }
+
+      .connection-list,
+      .resource-groups {
+        display: grid;
+        gap: 10px;
+      }
+
+      .connection-card,
+      .resource-card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.6);
+      }
+
+      .connection-card.active,
+      .resource-card.active {
+        border-color: rgba(195, 90, 43, 0.28);
+        background: rgba(195, 90, 43, 0.08);
+      }
+
+      .card-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .card-title strong {
+        font-size: 15px;
+      }
+
+      .subtle {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(200px, 1fr) auto auto;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .filter-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .filter-card {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.62);
+      }
+
+      .filter-card b {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .table-wrap {
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.68);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        padding: 12px 14px;
+        border-bottom: 1px solid rgba(121, 91, 62, 0.11);
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      th {
+        background: rgba(255, 249, 243, 0.96);
+        color: var(--muted);
+      }
+
+      tbody tr {
+        cursor: pointer;
+      }
+
+      tbody tr.active td {
+        background: rgba(195, 90, 43, 0.09);
+      }
+
+      tbody tr:hover td {
+        background: rgba(195, 90, 43, 0.05);
+      }
+
+      .code {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: rgba(37, 31, 26, 0.95);
+        color: #f7efe6;
+        padding: 14px;
+        min-height: 250px;
+        white-space: pre-wrap;
+        line-height: 1.6;
+        font-size: 12px;
+        font-family: "SFMono-Regular", Consolas, monospace;
+      }
+
+      .meta-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .meta-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px dashed rgba(121, 91, 62, 0.18);
+      }
+
+      .send-card {
+        margin-top: 14px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.65);
+      }
+
+      .send-card h4 {
+        margin: 0 0 10px;
+        font-size: 14px;
+      }
+
+      .send-card p {
+        margin: 0 0 12px;
+        color: var(--muted);
+        line-height: 1.55;
+        font-size: 13px;
+      }
+
+      @media (max-width: 1280px) {
+        .hero,
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        .toolbar,
+        .filter-strip {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      @media (max-width: 860px) {
+        .shell {
+          padding: 10px;
+        }
+
+        .topbar {
+          flex-wrap: wrap;
+        }
+
+        .top-actions {
+          margin-left: 0;
+          width: 100%;
+          flex-wrap: wrap;
+        }
+
+        .hero-metrics,
+        .split-2,
+        .toolbar,
+        .filter-strip {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <div class="app">
+        <header class="topbar">
+          <div class="brand">
+            <h1>MQ Test Tool</h1>
+            <p>V1 只做一件事: 帮你连上、收消息、查消息、顺手发一条。</p>
+          </div>
+          <div class="status"><span class="dot"></span> 当前连接: rabbit-prod-sh / 在线</div>
+          <div class="top-actions">
+            <button class="btn-ghost">导入连接</button>
+            <button class="btn">新建连接</button>
+          </div>
+        </header>
+
+        <section class="hero">
+          <div class="hero-card">
+            <div class="hero-kicker">V1 Scope</div>
+            <div class="hero-title">少一点协议细节，多一点联调效率。</div>
+            <div class="hero-copy">
+              这版稿子把界面收成三块：左边是连接和资源选择，中间是消息接收与过滤，右边是详情和简单发送。Kafka、RabbitMQ、ActiveMQ 都只暴露最小必要动作。
+            </div>
+            <div class="hero-metrics">
+              <div class="metric">
+                <span>连接状态</span>
+                <strong>已连接</strong>
+              </div>
+              <div class="metric">
+                <span>当前资源</span>
+                <strong>topic</strong>
+              </div>
+              <div class="metric">
+                <span>最近 1 分钟</span>
+                <strong>126 条</strong>
+              </div>
+              <div class="metric">
+                <span>过滤命中</span>
+                <strong>18 条</strong>
+              </div>
+            </div>
+          </div>
+          <div class="hero-note">
+            <h3>交互原则</h3>
+            <p>连接只负责连。收消息只负责选现有 queue 或 topic 然后开始。搜索过滤只针对已经收到的消息。发送区不展开复杂参数，做到能选目标、填 body、发出去就够。</p>
+          </div>
+        </section>
+
+        <main class="workspace">
+          <div class="layout">
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>连接和资源</h3>
+                  <small>先选连接，再选现有 queue / topic</small>
+                </div>
+                <div class="panel-extra">
+                  <span class="pill">在线</span>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="field">
+                  <label><span>连接名称</span><span>已保存</span></label>
+                  <input value="rabbit-prod-sh" />
+                </div>
+                <div class="field">
+                  <label><span>中间件类型</span><span>统一三种入口</span></label>
+                  <select>
+                    <option>RabbitMQ</option>
+                    <option>Kafka</option>
+                    <option>ActiveMQ</option>
+                  </select>
+                </div>
+                <div class="split-2">
+                  <div class="field">
+                    <label>Host</label>
+                    <input value="10.16.42.13" />
+                  </div>
+                  <div class="field">
+                    <label>Port</label>
+                    <input value="5672" />
+                  </div>
+                </div>
+                <div class="split-2">
+                  <div class="field">
+                    <label>Username</label>
+                    <input value="ops_viewer" />
+                  </div>
+                  <div class="field">
+                    <label>Password</label>
+                    <input value="********" />
+                  </div>
+                </div>
+                <div class="stack">
+                  <button class="btn">测试连接</button>
+                  <button class="btn-soft">保存连接</button>
+                  <button class="btn-ghost">断开</button>
+                </div>
+
+                <div style="height: 16px"></div>
+
+                <div class="connection-list">
+                  <div class="connection-card active">
+                    <div class="card-title">
+                      <strong>rabbit-prod-sh</strong>
+                      <span class="type-pill">RabbitMQ</span>
+                    </div>
+                    <div class="subtle">10.16.42.13:5672 / 当前使用中</div>
+                  </div>
+                  <div class="connection-card">
+                    <div class="card-title">
+                      <strong>kafka-pre-hz</strong>
+                      <span class="type-pill">Kafka</span>
+                    </div>
+                    <div class="subtle">10.18.2.16:9092 / 可切换</div>
+                  </div>
+                  <div class="connection-card">
+                    <div class="card-title">
+                      <strong>amq-dev</strong>
+                      <span class="type-pill">ActiveMQ</span>
+                    </div>
+                    <div class="subtle">10.19.9.22:61613 / 可切换</div>
+                  </div>
+                </div>
+
+                <div style="height: 18px"></div>
+
+                <div class="field">
+                  <label><span>资源搜索</span><span>仅现有资源</span></label>
+                  <input value="order.payment" />
+                </div>
+
+                <div class="resource-groups">
+                  <div class="resource-card active">
+                    <div class="card-title">
+                      <strong>order.payment.result</strong>
+                      <span class="type-pill">topic</span>
+                    </div>
+                    <div class="subtle">当前选中，点击开始接收</div>
+                  </div>
+                  <div class="resource-card">
+                    <div class="card-title">
+                      <strong>order.payment.retry</strong>
+                      <span class="type-pill">topic</span>
+                    </div>
+                    <div class="subtle">最近有 48 条消息</div>
+                  </div>
+                  <div class="resource-card">
+                    <div class="card-title">
+                      <strong>order.payment.dlq</strong>
+                      <span class="type-pill">queue</span>
+                    </div>
+                    <div class="subtle">死信队列</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>消息接收和过滤</h3>
+                  <small>只处理已经收到的消息，不额外做复杂规则</small>
+                </div>
+                <div class="panel-extra">
+                  <span class="type-pill">当前资源: order.payment.result</span>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="toolbar">
+                  <select>
+                    <option>资源类型: topic</option>
+                    <option>queue</option>
+                  </select>
+                  <input value="order.payment.result" />
+                  <input placeholder="关键字 / key / traceId" value="traceId=20260517" />
+                  <button class="btn">开始接收</button>
+                  <button class="btn-ghost">清空消息</button>
+                </div>
+
+                <div class="filter-strip">
+                  <div class="filter-card">
+                    <b>当前连接</b>
+                    rabbit-prod-sh
+                  </div>
+                  <div class="filter-card">
+                    <b>接收资源</b>
+                    topic / order.payment.result
+                  </div>
+                  <div class="filter-card">
+                    <b>过滤条件</b>
+                    关键字: traceId=20260517
+                  </div>
+                </div>
+
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>时间</th>
+                        <th>来源</th>
+                        <th>Key</th>
+                        <th>大小</th>
+                        <th>状态</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr class="active" data-message="0">
+                        <td>10:41:23</td>
+                        <td>order.payment.result</td>
+                        <td>pay_38219</td>
+                        <td>2.1 KB</td>
+                        <td>OK</td>
+                      </tr>
+                      <tr data-message="1">
+                        <td>10:41:19</td>
+                        <td>order.payment.result</td>
+                        <td>pay_38218</td>
+                        <td>1.7 KB</td>
+                        <td>WARN</td>
+                      </tr>
+                      <tr data-message="2">
+                        <td>10:41:07</td>
+                        <td>order.payment.result</td>
+                        <td>pay_38217</td>
+                        <td>1.9 KB</td>
+                        <td>OK</td>
+                      </tr>
+                      <tr data-message="3">
+                        <td>10:40:58</td>
+                        <td>order.payment.result</td>
+                        <td>pay_38216</td>
+                        <td>2.0 KB</td>
+                        <td>OK</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+
+            <aside class="panel">
+              <div class="panel-head">
+                <div>
+                  <h3>详情和简单发送</h3>
+                  <small>收到后能看，必要时能原地发一条</small>
+                </div>
+              </div>
+              <div class="panel-body">
+                <div class="stack" style="margin-bottom: 12px">
+                  <button class="btn-soft">复制消息</button>
+                  <button class="btn-ghost">复制 Key</button>
+                </div>
+
+                <div class="code" id="payload-view">{
+  "traceId": "20260517-38219",
+  "orderId": "SO-10003919",
+  "status": "SUCCESS",
+  "amount": 319.00,
+  "paymentChannel": "wechat",
+  "callbackTime": "2026-05-17T10:41:22+08:00"
+}</div>
+
+                <div class="meta-list">
+                  <div class="meta-line"><span>连接</span><strong>rabbit-prod-sh</strong></div>
+                  <div class="meta-line"><span>资源</span><strong>order.payment.result</strong></div>
+                  <div class="meta-line"><span>Key</span><strong>pay_38219</strong></div>
+                  <div class="meta-line"><span>状态</span><strong>OK</strong></div>
+                </div>
+
+                <div class="send-card">
+                  <h4>快速发送</h4>
+                  <p>这里只保留最简单的发送动作。选目标，填 body，点发送，不在 V1 里展开复杂 broker 参数。</p>
+                  <div class="field">
+                    <label><span>发送目标</span><span>可选 queue / topic</span></label>
+                    <input value="order.payment.retry" />
+                  </div>
+                  <div class="field">
+                    <label><span>消息体</span><span>可改，可直接沿用选中消息</span></label>
+                    <textarea>{
+  "traceId": "20260517-38219",
+  "orderId": "SO-10003919",
+  "status": "SUCCESS"
+}</textarea>
+                  </div>
+                  <div class="stack">
+                    <button class="btn">发送</button>
+                    <button class="btn-ghost">带入当前消息</button>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      const payloads = [
+        `{
+  "traceId": "20260517-38219",
+  "orderId": "SO-10003919",
+  "status": "SUCCESS",
+  "amount": 319.00,
+  "paymentChannel": "wechat",
+  "callbackTime": "2026-05-17T10:41:22+08:00"
+}`,
+        `{
+  "traceId": "20260517-38218",
+  "orderId": "SO-10003918",
+  "status": "WAIT_CALLBACK",
+  "retry": true,
+  "reason": "partner timeout"
+}`,
+        `{
+  "traceId": "20260517-38217",
+  "orderId": "SO-10003917",
+  "status": "SUCCESS",
+  "amount": 208.00,
+  "paymentChannel": "alipay"
+}`,
+        `{
+  "traceId": "20260517-38216",
+  "orderId": "SO-10003916",
+  "status": "SUCCESS",
+  "amount": 500.00,
+  "paymentChannel": "bank"
+}`
+      ];
+
+      const rows = document.querySelectorAll("[data-message]");
+      const payloadView = document.getElementById("payload-view");
+
+      rows.forEach(row => {
+        row.addEventListener("click", () => {
+          rows.forEach(item => item.classList.remove("active"));
+          row.classList.add("active");
+          payloadView.textContent = payloads[Number(row.dataset.message)] || payloads[0];
+        });
+      });
+    </script>
+  </body>
+</html>
