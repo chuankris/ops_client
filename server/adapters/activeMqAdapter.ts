@@ -171,10 +171,8 @@ async function searchDestinations(
 }
 
 function readDestinationName(objectName: string): string | null {
-  const marker = "destinationName=";
-  const index = objectName.indexOf(marker);
-  if (index < 0) return null;
-  return objectName.slice(index + marker.length);
+  const match = objectName.match(/destinationName=([^,]+)/);
+  return match?.[1] ?? null;
 }
 
 async function fetchWithBasicAuth(url: string, profile: ConnectionProfile, timeoutMs: number) {
